@@ -26,11 +26,14 @@ export const auth = betterAuth({
   plugins: [organization(), admin(), apiKey({ enableMetadata: true })],
   secret: process.env['BETTER_AUTH_SECRET']!,
   baseURL: process.env['BETTER_AUTH_URL'] || 'http://localhost:4001',
-  trustedOrigins: [
-    'http://localhost:3000', // Admin dashboard
-    'http://localhost:3001', // Web portal
-    'http://localhost:4001', // Backend
-  ],
+  trustedOrigins:
+    process.env['NODE_ENV'] === 'development'
+      ? [
+          'http://localhost:3000', // Admin dashboard
+          'http://localhost:3001', // Web portal
+          'http://localhost:4001', // Backend
+        ]
+      : process.env['TRUSTED_ORIGINS']?.split(',') || [],
 });
 
 export type Session = typeof auth.$Infer.Session;
