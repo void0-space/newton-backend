@@ -1,0 +1,206 @@
+import { FastifyPluginAsync, FastifyRequest } from 'fastify';
+import {
+  createWhatsAppSession,
+  getWhatsAppSession,
+  listWhatsAppSessions,
+  disconnectWhatsAppSession,
+  deleteWhatsAppSession,
+  internalSendMessage,
+  getSessionQR,
+  getMessages,
+  updateSessionSettings,
+  reconnectWhatsAppSession,
+} from '../controllers/whatsappController';
+import { sendMessage } from '../controllers/apiController';
+import { auth } from '../lib/auth';
+import { convertHeaders } from '../utils/header';
+import { whatsappSession } from '../db/schema/whatsapp';
+import { eq, and } from 'drizzle-orm';
+import { db } from '../db/drizzle';
+
+const whatsappRoutes: FastifyPluginAsync = async fastify => {
+  // Session-based authentication middleware for account management routes
+  const sessionAuthMiddleware = async (request: FastifyRequest, reply: any) => {
+    try {
+      // Convert Fastify headers to standard Headers object
+      const headers = convertHeaders(request);
+
+      request.log.info('Session auth middleware - checking session');
+      const session = await auth.api.getSession({ headers });
+
+      request.log.info(
+        `Session data: ${JSON.stringify({
+          hasSession: !!session?.session,
+          hasActiveOrg: !!session?.session?.activeOrganizationId,
+          activeOrganizationId: session?.session?.activeOrganizationId,
+        })}`
+      );
+
+      if (!session?.session) {
+        request.log.warn('No session found in auth middleware');
+        return reply.status(401).send({
+          error: 'Authentication required',
+          code: 'AUTH_REQUIRED',
+        });
+      }
+
+      if (!session?.session.activeOrganizationId) {
+        request.log.warn('No active organization found in session');
+        return reply.status(400).send({
+          error: 'User must be associated with an organization',
+          code: 'NO_ORGANIZATION',
+        });
+      }
+
+      // Set organization context for the request
+      (request as any).organization = {
+        id: session.session.activeOrganizationId,
+        name: 'Unknown', // TODO: Get organization name from database using activeOrganizationId
+      };
+
+      request.log.info(
+        `Session authenticated for organization: ${session.session.activeOrganizationId}`
+      );
+    } catch (error) {
+      request.log.error(
+        'Error in session auth middleware: ' +
+          (error instanceof Error ? error.message : String(error))
+      );
+      return reply.status(500).send({
+        error: 'Authentication error',
+        code: 'AUTH_ERROR',
+      });
+    }
+  };
+
+  // API key authentication middleware for sending routes
+  const apiKeyAuthMiddleware = async (request: FastifyRequest, _reply: any) => {
+    const _apiKey = request.headers['x-api-key'];
+    // Check for API key
+    // if (!apiKey) {
+    //   return reply.status(401).send({
+    //     error: 'API key required',
+    //     code: 'API_KEY_REQUIRED',
+    //   });
+    // }
+  };
+
+  // Session management routes - require user session
+  fastify.post('/connect', { preHandler: sessionAuthMiddleware }, createWhatsAppSession);
+  fastify.get('/accounts', { preHandler: sessionAuthMiddleware }, listWhatsAppSessions);
+  fastify.get('/accounts/:id', { preHandler: sessionAuthMiddleware }, getWhatsAppSession);
+  fastify.post(
+    '/accounts/:id/disconnect',
+    { preHandler: sessionAuthMiddleware },
+    disconnectWhatsAppSession
+  );
+  fastify.post(
+    '/accounts/:id/reconnect',
+    { preHandler: sessionAuthMiddleware },
+    reconnectWhatsAppSession
+  );
+  fastify.delete('/accounts/:id', { preHandler: sessionAuthMiddleware }, deleteWhatsAppSession);
+  fastify.put(
+    '/accounts/:id/settings',
+    { preHandler: sessionAuthMiddleware },
+    updateSessionSettings
+  );
+  fastify.get('/connection-status/:sessionId', { preHandler: sessionAuthMiddleware }, getSessionQR);
+
+  // Real-time status updates via Server-Sent Events
+  fastify.get(
+    '/status-updates',
+    { preHandler: sessionAuthMiddleware },
+    async (request: any, reply) => {
+      reply.raw.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        Connection: 'keep-alive',
+        'Access-Control-Allow-Origin': 'http://localhost:3000',
+        'Access-Control-Allow-Credentials': 'true',
+        'Access-Control-Allow-Headers': 'Cache-Control',
+      });
+
+      const organizationId = request.organization.id;
+      const subscriber = fastify.redis.duplicate();
+
+      // Subscribe to WhatsApp session events for this organization
+      await subscriber.psubscribe('whatsapp:session:*');
+
+      const heartbeat = setInterval(() => {
+        const heartbeatData = { type: 'heartbeat', timestamp: new Date().toISOString() };
+        fastify.log.info(heartbeatData, 'Sending SSE heartbeat:');
+        reply.raw.write(`data: ${JSON.stringify(heartbeatData)}\n\n`);
+      }, 10000); // Reduced to 10 seconds for testing
+
+      subscriber.on('pmessage', async (_pattern, channel, message) => {
+        try {
+          const eventData = JSON.parse(message);
+          const sessionId = channel.split(':')[2];
+
+          fastify.log.info(
+            {
+              event: eventData.event,
+              organizationId,
+              channel,
+              data: eventData.data,
+            },
+            `SSE received event for session ${sessionId}:`
+          );
+
+          // Check if session belongs to this organization with direct database query
+          const [session] = await db
+            .select()
+            .from(whatsappSession)
+            .where(
+              and(
+                eq(whatsappSession.id, sessionId),
+                eq(whatsappSession.organizationId, organizationId)
+              )
+            )
+            .limit(1);
+
+          if (session) {
+            const statusUpdate = {
+              type: 'status_update',
+              sessionId,
+              event: eventData.event,
+              data: eventData.data,
+              timestamp: eventData.timestamp,
+            };
+
+            fastify.log.info(statusUpdate, `Sending SSE event to frontend:`);
+            reply.raw.write(`data: ${JSON.stringify(statusUpdate)}\n\n`);
+          } else {
+            fastify.log.info(
+              `Session ${sessionId} does not belong to organization ${organizationId}, skipping event`
+            );
+          }
+        } catch (error) {
+          fastify.log.error(
+            'Error processing SSE event: ' +
+              (error instanceof Error ? error.message : String(error))
+          );
+        }
+      });
+
+      request.raw.on('close', () => {
+        clearInterval(heartbeat);
+        subscriber.quit();
+      });
+    }
+  );
+
+  // Message routes
+  // Get messages for admin panel
+  fastify.get('/messages', { preHandler: sessionAuthMiddleware }, getMessages);
+
+  // Message sending routes
+  // Internal route for admin panel - require session auth (no billing)
+  fastify.post('/internal/send', { preHandler: sessionAuthMiddleware }, internalSendMessage);
+
+  // Public API route - require API key (billable)
+  fastify.post('/send', { preHandler: apiKeyAuthMiddleware }, sendMessage);
+};
+
+export default whatsappRoutes;

@@ -1,0 +1,307 @@
+import { FastifyRequest, FastifyReply } from 'fastify';
+import { z } from 'zod';
+import { createId } from '@paralleldrive/cuid2';
+import { db } from '../db/drizzle';
+import { message } from '../db/schema';
+import { auth } from '../lib/auth';
+
+const sendMessageSchema = z
+  .object({
+    to: z.string().min(1, 'Recipient phone number is required'),
+    message: z.string().optional(), // Made optional for media messages
+    type: z
+      .enum(['text', 'image', 'video', 'audio', 'document', 'sticker', 'gif', 'button', 'template'])
+      .default('text'),
+    mediaUrl: z.string().optional(),
+    fileName: z.string().optional(),
+    caption: z.string().optional(),
+    replyMessageId: z.string().optional(),
+  })
+  .refine(
+    data => {
+      // For text messages, message is required
+      if (data.type === 'text' && !data.message) {
+        return false;
+      }
+      return true;
+    },
+    {
+      message: 'Message content is required for text messages',
+      path: ['message'],
+    }
+  );
+
+export async function sendMessage(request: FastifyRequest, reply: FastifyReply) {
+  try {
+    const {
+      to: rawPhoneNumber,
+      message: messageText,
+      type,
+      mediaUrl,
+      fileName,
+      caption,
+      replyMessageId,
+    } = sendMessageSchema.parse(request.body);
+
+    // Format phone number - add @s.whatsapp.net if not already present
+    const to = rawPhoneNumber.includes('@') ? rawPhoneNumber : `${rawPhoneNumber}@s.whatsapp.net`;
+
+    request.log.info(`API: Sending message - To: ${to}, Type: ${type}`);
+
+    // Get API key data (set by API key middleware)
+    const apiKey = request.headers['x-api-key'];
+    const verifiedKey = await auth.api.verifyApiKey({
+      body: {
+        key: apiKey as string,
+      },
+    });
+    request.log.info(`API: Verified API key - ${JSON.stringify(verifiedKey.key?.metadata)}`);
+
+    if (!verifiedKey.valid) {
+      return reply.status(401).send({
+        error: 'API key required',
+        code: 'API_KEY_REQUIRED',
+      });
+    }
+
+    // Get organization from API key
+    const organizationId = verifiedKey.key?.metadata?.['organizationId'];
+
+    if (!organizationId) {
+      return reply.status(400).send({
+        error:
+          'Organization context required. Please ensure your API key is associated with an organization.',
+        code: 'ORGANIZATION_REQUIRED',
+      });
+    }
+
+    request.log.info(`API: Using organization: ${organizationId}`);
+
+    // Get the WhatsApp account ID from API key metadata
+    const whatsappAccountId = verifiedKey.key?.metadata?.['accountId'];
+
+    // Find sessions for this organization
+    const sessions = await request.server.baileys.listSessions(organizationId);
+
+    let connectedSession;
+    if (whatsappAccountId) {
+      // Use the specific WhatsApp account from API key metadata
+      connectedSession = sessions.find(
+        session => session.id === whatsappAccountId && session.status === 'connected'
+      );
+
+      if (!connectedSession) {
+        return reply.status(404).send({
+          error: `WhatsApp account ${whatsappAccountId} is not connected. Please ensure the account is connected and active.`,
+          code: 'WHATSAPP_ACCOUNT_NOT_CONNECTED',
+        });
+      }
+    } else {
+      // Fallback: use the first connected session
+      connectedSession = sessions.find(session => session.status === 'connected');
+
+      if (!connectedSession) {
+        return reply.status(404).send({
+          error:
+            'No connected WhatsApp session found. Please connect a WhatsApp account first or specify whatsappAccountId in API key.',
+          code: 'SESSION_NOT_FOUND',
+        });
+      }
+    }
+
+    request.log.info(`API: Using WhatsApp session: ${connectedSession.id}`);
+
+    const session = connectedSession;
+
+    if (!session.socket || session.status !== 'connected') {
+      request.log.info(
+        `API: Session ${session.id} not connected (Status: ${session.status}). Attempting to reconnect...`
+      );
+
+      try {
+        // Attempt to reconnect the session
+        await request.server.baileys.reconnectSession(session.id, organizationId);
+
+        // Wait a bit for connection to establish
+        await new Promise(resolve => setTimeout(resolve, 2000));
+
+        // Get the updated session status
+        const updatedSession = await request.server.baileys.getSession(session.id, organizationId);
+
+        if (!updatedSession || updatedSession.status !== 'connected') {
+          const currentStatus = updatedSession?.status || 'unknown';
+          request.log.error(
+            `API: Failed to reconnect session ${session.id}. Status: ${currentStatus}`
+          );
+
+          if (currentStatus === 'qr_required') {
+            return reply.status(400).send({
+              error:
+                'WhatsApp session requires QR code scanning. Please scan the QR code in the admin panel to connect.',
+              code: 'QR_SCAN_REQUIRED',
+              sessionId: session.id,
+              currentStatus: currentStatus,
+              qrCode: updatedSession?.qrCode,
+            });
+          }
+
+          return reply.status(503).send({
+            error:
+              'WhatsApp session could not be connected. Please check the session status and try again.',
+            code: 'SESSION_CONNECTION_FAILED',
+            sessionId: session.id,
+            currentStatus: currentStatus,
+          });
+        }
+
+        // Update session reference to use the reconnected session
+        session.socket = updatedSession.socket;
+        session.status = updatedSession.status;
+
+        request.log.info(`API: Successfully reconnected session ${session.id}`);
+      } catch (reconnectError) {
+        request.log.error(reconnectError, `API: Error reconnecting session ${session.id}:`);
+        return reply.status(503).send({
+          error: 'Failed to reconnect WhatsApp session',
+          code: 'RECONNECTION_FAILED',
+          sessionId: session.id,
+          details: reconnectError instanceof Error ? reconnectError.message : 'Unknown error',
+        });
+      }
+    }
+
+    request.log.info('API: Session is connected, preparing to send message');
+
+    // Prepare message content based on type
+    let messageContent: any = {};
+
+    switch (type) {
+      case 'text':
+        if (!messageText) {
+          return reply.status(400).send({
+            error: 'Message content is required for text messages',
+            code: 'MESSAGE_REQUIRED',
+          });
+        }
+        messageContent = { text: messageText };
+        break;
+      case 'image':
+        if (!mediaUrl) {
+          return reply.status(400).send({
+            error: 'Media URL is required for image messages',
+            code: 'MEDIA_URL_REQUIRED',
+          });
+        }
+        messageContent = {
+          image: { url: mediaUrl },
+          caption: caption || undefined,
+        };
+        break;
+      case 'video':
+        if (!mediaUrl) {
+          return reply.status(400).send({
+            error: 'Media URL is required for video messages',
+            code: 'MEDIA_URL_REQUIRED',
+          });
+        }
+        messageContent = {
+          video: { url: mediaUrl },
+          caption: caption || undefined,
+        };
+        break;
+      case 'audio':
+        if (!mediaUrl) {
+          return reply.status(400).send({
+            error: 'Media URL is required for audio messages',
+            code: 'MEDIA_URL_REQUIRED',
+          });
+        }
+        messageContent = {
+          audio: { url: mediaUrl },
+        };
+        break;
+      case 'document':
+        if (!mediaUrl) {
+          return reply.status(400).send({
+            error: 'Media URL is required for document messages',
+            code: 'MEDIA_URL_REQUIRED',
+          });
+        }
+        messageContent = {
+          document: { url: mediaUrl },
+          fileName: fileName || 'document',
+          caption: caption || undefined,
+        };
+        break;
+      default:
+        return reply.status(400).send({
+          error: `Message type '${type}' is not supported`,
+          code: 'UNSUPPORTED_MESSAGE_TYPE',
+        });
+    }
+
+    // Add reply context if provided
+    if (replyMessageId) {
+      messageContent.quoted = { id: replyMessageId };
+    }
+
+    request.log.info('API: Sending message with content:' + ' (details logged)');
+
+    // Send message via Baileys
+    const result = await session.socket.sendMessage(to, messageContent);
+
+    request.log.info('API: Message sent successfully:' + ' (details logged)');
+
+    // Generate message ID for database
+    const messageId = createId();
+
+    // Save outgoing message to database
+    await request.server.baileys.saveOutgoingMessage(
+      organizationId,
+      session.id,
+      messageId,
+      to,
+      messageText || caption || 'media',
+      result
+    );
+
+    // Track usage for API billing
+    try {
+      if (request.server.billing) {
+        await request.server.billing.trackUsage(organizationId, 'messages_sent', 1);
+      }
+    } catch (usageError) {
+      request.log.warn(
+        'API: Failed to track usage: ' +
+          (usageError instanceof Error ? usageError.message : String(usageError))
+      );
+    }
+
+    return reply.send({
+      success: true,
+      messageId: result?.key?.id,
+      status: result?.status || 'sent',
+      to,
+      sessionId: session.id,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    request.log.error(
+      'API: Error sending message: ' + (error instanceof Error ? error.message : String(error))
+    );
+
+    if (error instanceof z.ZodError) {
+      return reply.status(400).send({
+        error: 'Validation failed',
+        code: 'VALIDATION_ERROR',
+        details: error.errors,
+      });
+    }
+
+    return reply.status(500).send({
+      error: 'Failed to send message',
+      code: 'SEND_MESSAGE_FAILED',
+      details: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+}

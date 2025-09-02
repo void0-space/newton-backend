@@ -1,0 +1,1136 @@
+import makeWASocket, {
+  DisconnectReason,
+  useMultiFileAuthState,
+  WASocket,
+  WAMessage,
+  ConnectionState,
+} from '@whiskeysockets/baileys';
+import QRCode from 'qrcode';
+import { FastifyInstance } from 'fastify';
+import { db } from '../db/drizzle';
+import { whatsappSession, message } from '../db/schema';
+import { eq, and } from 'drizzle-orm';
+import { encryptData } from '../utils/crypto';
+import { createId } from '@paralleldrive/cuid2';
+import fs from 'fs/promises';
+import path from 'path';
+import { WebhookService } from './webhookService';
+
+export interface BaileysSession {
+  id: string;
+  organizationId: string;
+  socket: WASocket | null;
+  qrCode: string | null;
+  status: 'disconnected' | 'connecting' | 'connected' | 'qr_required';
+  phoneNumber?: string;
+  profileName?: string;
+  profilePhoto?: string;
+  lastActive: Date;
+  createdAt?: Date;
+
+  // Settings
+  alwaysShowOnline?: boolean;
+  autoRejectCalls?: boolean;
+  antiBanSubscribe?: boolean;
+  antiBanStrictMode?: boolean;
+  webhookUrl?: string;
+  webhookMethod?: string;
+  manuallyDisconnected?: boolean;
+}
+
+export class BaileysManager {
+  private sessions: Map<string, BaileysSession> = new Map();
+  private fastify: FastifyInstance;
+  private webhookService: WebhookService;
+
+  constructor(fastify: FastifyInstance) {
+    this.fastify = fastify;
+    this.webhookService = new WebhookService(fastify);
+  }
+
+  async createSession(sessionId: string, organizationId: string): Promise<BaileysSession> {
+    try {
+      // Check if session already exists
+      if (this.sessions.has(sessionId)) {
+        throw new Error('Session already exists');
+      }
+
+      // Create session directory for auth state
+      const sessionDir = path.join(process.cwd(), 'sessions', sessionId);
+      await fs.mkdir(sessionDir, { recursive: true });
+
+      // Initialize auth state
+      const { state, saveCreds } = await useMultiFileAuthState(sessionDir);
+
+      const session: BaileysSession = {
+        id: sessionId,
+        organizationId,
+        socket: null,
+        qrCode: null,
+        status: 'connecting',
+        lastActive: new Date(),
+        manuallyDisconnected: false, // Clear manually disconnected flag when starting new session
+        alwaysShowOnline: true, // Default to auto-reconnect
+      };
+
+      // Create WhatsApp socket
+      const socket = makeWASocket({
+        auth: state,
+        printQRInTerminal: false,
+        logger: this.fastify.log.child({ sessionId }),
+        markOnlineOnConnect: true,
+        generateHighQualityLinkPreview: true,
+        qrTimeout: 120000, // 2 minutes QR timeout
+        connectTimeoutMs: 120000, // 2 minutes connect timeout
+        keepAliveIntervalMs: 30000, // Keep alive every 30 seconds
+        retryRequestDelayMs: 2000, // 2 second retry delay
+      });
+
+      session.socket = socket;
+      const sessionKey = `${organizationId}:${sessionId}`;
+      this.sessions.set(sessionKey, session);
+
+      // Handle connection events with proper context
+      const sessionContext = { sessionId, organizationId, sessionKey };
+
+      socket.ev.on('connection.update', async update => {
+        await this.handleConnectionUpdate(sessionContext, update);
+      });
+
+      // Handle credentials update
+      socket.ev.on('creds.update', saveCreds);
+
+      // Handle messages
+      socket.ev.on('messages.upsert', async messageUpdate => {
+        await this.handleMessages(sessionContext, messageUpdate);
+      });
+
+      // Handle message status updates
+      socket.ev.on('messages.update', async updates => {
+        await this.handleMessageUpdates(sessionContext, updates);
+      });
+
+      // Save initial session to database
+      await this.saveSessionToDb(session);
+
+      return session;
+    } catch (error) {
+      this.fastify.log.error(`Failed to create session ${sessionId}:`, error);
+      throw error;
+    }
+  }
+
+  async getSession(sessionId: string, organizationId: string): Promise<BaileysSession | null> {
+    // Check in-memory sessions first
+    const sessionKey = `${organizationId}:${sessionId}`;
+    const memorySession = this.sessions.get(sessionKey);
+
+    this.fastify.log.info(
+      `Getting session ${sessionId} for org ${organizationId}: ${JSON.stringify({
+        sessionKey,
+        hasMemorySession: !!memorySession,
+        memorySessionStatus: memorySession?.status,
+        allSessionKeys: Array.from(this.sessions.keys()),
+      })}`
+    );
+
+    if (memorySession && memorySession.organizationId === organizationId) {
+      this.fastify.log.info(`Returning memory session with status: ${memorySession.status}`);
+      return memorySession;
+    }
+
+    // Check database
+    const [dbSession] = await db
+      .select()
+      .from(whatsappSession)
+      .where(
+        and(eq(whatsappSession.id, sessionId), eq(whatsappSession.organizationId, organizationId))
+      )
+      .limit(1);
+
+    if (!dbSession) {
+      return null;
+    }
+
+    // Don't restore manually disconnected sessions
+    if (dbSession.manuallyDisconnected) {
+      this.fastify.log.info(`Session ${sessionId} is manually disconnected - not restoring`);
+      return {
+        id: dbSession.id,
+        organizationId: dbSession.organizationId,
+        socket: null,
+        qrCode: dbSession.qrCode,
+        status: 'disconnected' as any,
+        phoneNumber: dbSession.phoneNumber || undefined,
+        lastActive: dbSession.lastActive || new Date(),
+        createdAt: dbSession.createdAt || new Date(),
+        alwaysShowOnline: dbSession.alwaysShowOnline ?? true,
+        autoRejectCalls: dbSession.autoRejectCalls ?? false,
+        antiBanSubscribe: dbSession.antiBanSubscribe ?? false,
+        antiBanStrictMode: dbSession.antiBanStrictMode ?? false,
+        webhookUrl: dbSession.webhookUrl || undefined,
+        webhookMethod: dbSession.webhookMethod || 'POST',
+        manuallyDisconnected: true,
+      };
+    }
+
+    // Try to restore session if it's not in memory
+    try {
+      await this.restoreSession(dbSession);
+      return this.sessions.get(sessionKey) || null;
+    } catch (error) {
+      this.fastify.log.error(`Failed to restore session ${sessionId}:`, error);
+      return {
+        id: dbSession.id,
+        organizationId: dbSession.organizationId,
+        socket: null,
+        qrCode: dbSession.qrCode,
+        status: dbSession.status as any,
+        phoneNumber: dbSession.phoneNumber || undefined,
+        lastActive: dbSession.lastActive || new Date(),
+        createdAt: dbSession.createdAt || new Date(),
+        alwaysShowOnline: dbSession.alwaysShowOnline ?? true,
+        autoRejectCalls: dbSession.autoRejectCalls ?? false,
+        antiBanSubscribe: dbSession.antiBanSubscribe ?? false,
+        antiBanStrictMode: dbSession.antiBanStrictMode ?? false,
+        webhookUrl: dbSession.webhookUrl || undefined,
+        webhookMethod: dbSession.webhookMethod || 'POST',
+        manuallyDisconnected: dbSession.manuallyDisconnected ?? false,
+      };
+    }
+  }
+
+  async disconnectSession(sessionId: string, organizationId: string): Promise<void> {
+    this.fastify.log.info(`Starting manual disconnection for session ${sessionId}`);
+
+    const sessionKey = `${organizationId}:${sessionId}`;
+    const session = this.sessions.get(sessionKey);
+
+    try {
+      // First, update database to prevent reconnection
+      await db
+        .update(whatsappSession)
+        .set({
+          status: 'disconnected',
+          manuallyDisconnected: true,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(eq(whatsappSession.id, sessionId), eq(whatsappSession.organizationId, organizationId))
+        );
+
+      this.fastify.log.info(`Updated database for session ${sessionId} - manually disconnected`);
+
+      if (session && session.organizationId === organizationId) {
+        // Mark as manually disconnected to prevent auto-reconnection
+        session.manuallyDisconnected = true;
+        session.status = 'disconnected';
+
+        if (session.socket) {
+          try {
+            // Don't call logout as it causes issues - just close the connection
+            session.socket.end(undefined);
+            this.fastify.log.info(`Closed socket for session ${sessionId}`);
+          } catch (socketError) {
+            this.fastify.log.warn(
+              `Error closing socket for ${sessionId}: ${socketError instanceof Error ? socketError.message : String(socketError)}`
+            );
+          }
+        }
+
+        session.socket = null;
+
+        // Save updated session state to database to ensure consistency
+        await this.saveSessionToDb(session);
+
+        this.sessions.delete(sessionKey);
+
+        // Clean up session directory
+        const sessionDir = path.join(process.cwd(), 'sessions', sessionId);
+        try {
+          await fs.rm(sessionDir, { recursive: true, force: true });
+          this.fastify.log.info(`Cleaned session directory for ${sessionId}`);
+        } catch (error) {
+          this.fastify.log.warn(`Failed to clean session directory ${sessionDir}:`, error);
+        }
+      }
+
+      // Publish disconnect event with more context
+      await this.publishEvent(sessionId, 'disconnected', {
+        reason: 'manual_disconnect',
+        status: 'disconnected',
+        manuallyDisconnected: true,
+      });
+      this.fastify.log.info(`Successfully disconnected session ${sessionId} and published event`);
+
+      // Small delay to ensure database changes are committed
+      await new Promise(resolve => setTimeout(resolve, 100));
+    } catch (error) {
+      this.fastify.log.error(`Error in disconnectSession for ${sessionId}:`, error);
+      throw error;
+    }
+  }
+
+  async listSessions(organizationId: string): Promise<BaileysSession[]> {
+    const dbSessions = await db
+      .select()
+      .from(whatsappSession)
+      .where(eq(whatsappSession.organizationId, organizationId));
+
+    const result = dbSessions.map(dbSession => {
+      const sessionKey = `${organizationId}:${dbSession.id}`;
+      const memorySession = this.sessions.get(sessionKey);
+
+      // If manually disconnected, always use database status regardless of memory session
+      const finalStatus = dbSession.manuallyDisconnected
+        ? 'disconnected'
+        : memorySession?.status || dbSession.status;
+
+      this.fastify.log.info(
+        `Listing session ${dbSession.id}: ${JSON.stringify({
+          sessionKey,
+          hasMemorySession: !!memorySession,
+          memoryStatus: memorySession?.status,
+          dbStatus: dbSession.status,
+          manuallyDisconnected: dbSession.manuallyDisconnected,
+          finalStatus,
+        })}`
+      );
+
+      return {
+        id: dbSession.id,
+        organizationId: dbSession.organizationId,
+        socket: memorySession?.socket || null,
+        qrCode: dbSession.qrCode,
+        status: finalStatus as any,
+        phoneNumber: dbSession.phoneNumber || undefined,
+        profileName: dbSession.profileName || undefined,
+        profilePhoto: dbSession.profilePhoto || undefined,
+        lastActive: dbSession.lastActive || new Date(),
+        createdAt: dbSession.createdAt || new Date(),
+        alwaysShowOnline: dbSession.alwaysShowOnline ?? true,
+        autoRejectCalls: dbSession.autoRejectCalls ?? false,
+        antiBanSubscribe: dbSession.antiBanSubscribe ?? false,
+        antiBanStrictMode: dbSession.antiBanStrictMode ?? false,
+        webhookUrl: dbSession.webhookUrl || undefined,
+        webhookMethod: dbSession.webhookMethod || 'POST',
+        manuallyDisconnected: dbSession.manuallyDisconnected ?? false,
+      };
+    });
+
+    this.fastify.log.info(
+      `Returning ${result.length} sessions for org ${organizationId}: ${JSON.stringify({
+        allMemorySessionKeys: Array.from(this.sessions.keys()),
+      })}`
+    );
+
+    return result;
+  }
+
+  private async handleConnectionUpdate(
+    sessionContext: { sessionId: string; organizationId: string; sessionKey: string },
+    update: Partial<ConnectionState>
+  ) {
+    const { sessionId, organizationId, sessionKey } = sessionContext;
+    const session = this.sessions.get(sessionKey);
+
+    this.fastify.log.info(
+      `Connection update for session ${sessionId}: ${JSON.stringify({
+        foundSession: !!session,
+        sessionKey,
+        sessionStatus: session?.status,
+        updateConnection: update.connection,
+        organizationId,
+      })}`
+    );
+
+    if (!session) {
+      this.fastify.log.error(`Session ${sessionId} not found in memory during connection update`);
+      return;
+    }
+
+    const { connection, lastDisconnect, qr } = update;
+
+    this.fastify.log.info(
+      `Session ${sessionId} connection update: ${JSON.stringify({
+        connection,
+        lastDisconnect: lastDisconnect?.error?.cause,
+        hasQR: !!qr,
+      })}`
+    );
+
+    if (qr) {
+      this.fastify.log.info(`QR code generated for session ${sessionId}`);
+      // Generate QR code
+      const qrCodeUrl = await QRCode.toDataURL(qr);
+      session.qrCode = qrCodeUrl;
+      session.status = 'qr_required';
+
+      this.fastify.log.info(`Session ${sessionId} status set to qr_required`);
+
+      await this.saveSessionToDb(session);
+      this.fastify.log.info(`Session ${sessionId} saved to database with QR code`);
+
+      // Publish QR event to Redis
+      await this.publishEvent(sessionId, 'qr_generated', { qrCode: qrCodeUrl });
+      this.fastify.log.info(`Published qr_generated event for session ${sessionId}`);
+    }
+
+    if (connection === 'close') {
+      const statusCode = (lastDisconnect?.error as any)?.output?.statusCode;
+      const errorMessage = lastDisconnect?.error?.message || '';
+
+      this.fastify.log.info(
+        `Session ${sessionId} disconnected with status: ${statusCode}, error: ${errorMessage}, manuallyDisconnected: ${session.manuallyDisconnected}, alwaysShowOnline: ${session.alwaysShowOnline}`
+      );
+
+      // Don't auto-reconnect if manually disconnected
+      if (session.manuallyDisconnected) {
+        session.status = 'disconnected';
+        session.socket = null;
+        session.qrCode = null;
+        this.sessions.delete(sessionKey);
+
+        await this.publishEvent(sessionId, 'disconnected', { reason: 'manual_disconnect' });
+        await this.saveSessionToDb(session);
+        return;
+      }
+
+      // Handle stream errors (code 515) during pairing - restart the connection
+      if (errorMessage.includes('Stream Errored') || statusCode === 515) {
+        this.fastify.log.info(
+          `Stream error detected for session ${sessionId}, attempting restart...`
+        );
+        session.status = 'connecting';
+        session.socket = null;
+
+        await this.saveSessionToDb(session);
+        await this.publishEvent(sessionId, 'connecting', { reason: 'stream_error_restart' });
+
+        // Restart the connection after a short delay
+        setTimeout(async () => {
+          try {
+            await this.recreateSocket({ sessionId, organizationId, sessionKey });
+          } catch (error) {
+            this.fastify.log.error(
+              `Failed to restart session ${sessionId} after stream error:`,
+              error
+            );
+          }
+        }, 2000);
+        return;
+      }
+
+      // Handle different disconnect reasons based on settings
+      if (statusCode === DisconnectReason.loggedOut) {
+        // User logged out - don't reconnect, require QR
+        session.status = 'disconnected';
+        session.socket = null;
+        session.qrCode = null;
+        this.sessions.delete(sessionKey);
+
+        // Clean up session directory
+        const sessionDir = path.join(process.cwd(), 'sessions', sessionId);
+        try {
+          await fs.rm(sessionDir, { recursive: true, force: true });
+          this.fastify.log.info(`Cleaned up session directory for logged out session ${sessionId}`);
+        } catch (error) {
+          this.fastify.log.warn(`Failed to clean session directory ${sessionDir}:`, error);
+        }
+
+        await this.publishEvent(sessionId, 'disconnected', { reason: 'logged_out' });
+      } else if (statusCode === DisconnectReason.timedOut) {
+        // Only reconnect if alwaysShowOnline is enabled AND not manually disconnected
+        if (session.alwaysShowOnline && !session.manuallyDisconnected) {
+          session.status = 'connecting';
+          this.fastify.log.info(
+            `Session ${sessionId} timed out, attempting reconnect in 10 seconds (Always Show Online enabled)`
+          );
+
+          setTimeout(() => {
+            this.recreateSocket(sessionContext);
+          }, 10000); // 10 second delay for timeout
+
+          await this.publishEvent(sessionId, 'connecting', { reason: 'timeout_reconnect' });
+        } else {
+          session.status = 'disconnected';
+          session.socket = null;
+          this.sessions.delete(sessionKey);
+          const reason = session.manuallyDisconnected
+            ? 'manual_disconnect'
+            : 'timeout_no_auto_reconnect';
+          await this.publishEvent(sessionId, 'disconnected', { reason });
+        }
+      } else if (statusCode === 401 || statusCode === DisconnectReason.restartRequired) {
+        // Device conflict or restart required - clean up and require QR
+        session.status = 'qr_required';
+        session.socket = null;
+        session.qrCode = null;
+
+        const sessionDir = path.join(process.cwd(), 'sessions', sessionId);
+        try {
+          await fs.rm(sessionDir, { recursive: true, force: true });
+          this.fastify.log.info(`Cleaned up session directory for device conflict ${sessionId}`);
+        } catch (error) {
+          this.fastify.log.warn(`Failed to clean session directory ${sessionDir}:`, error);
+        }
+
+        await this.publishEvent(sessionId, 'qr_required', { reason: 'device_conflict' });
+      } else {
+        // Other connection issues - only reconnect if alwaysShowOnline is enabled AND not manually disconnected
+        if (session.alwaysShowOnline && !session.manuallyDisconnected) {
+          session.status = 'connecting';
+          this.fastify.log.info(
+            `Session ${sessionId} disconnected, attempting reconnect in 3 seconds (Always Show Online enabled)`
+          );
+
+          setTimeout(() => {
+            this.recreateSocket(sessionContext);
+          }, 3000); // 3 second delay for other issues
+
+          await this.publishEvent(sessionId, 'connecting', {
+            reason: 'connection_lost_auto_reconnect',
+          });
+        } else {
+          session.status = 'disconnected';
+          session.socket = null;
+          this.sessions.delete(sessionKey);
+          const reason = session.manuallyDisconnected
+            ? 'manual_disconnect'
+            : 'connection_lost_no_auto_reconnect';
+          await this.publishEvent(sessionId, 'disconnected', { reason });
+        }
+      }
+
+      await this.saveSessionToDb(session);
+    } else if (connection === 'open') {
+      this.fastify.log.info(
+        `Session ${sessionId} connection is now OPEN - setting status to connected`
+      );
+      session.status = 'connected';
+      session.qrCode = null;
+      session.phoneNumber = session.socket?.user?.id?.split(':')[0];
+      session.lastActive = new Date();
+
+      // Fetch profile information
+      try {
+        if (session.socket && session.phoneNumber) {
+          const profileInfo = await session.socket.fetchStatus(session.socket.user?.id);
+          session.profileName =
+            profileInfo?.status || session.socket.user?.name || session.phoneNumber;
+
+          // Try to get profile picture
+          try {
+            const ppUrl = await session.socket.profilePictureUrl(session.socket.user?.id, 'image');
+            session.profilePhoto = ppUrl;
+          } catch (ppError) {
+            this.fastify.log.warn(`Failed to fetch profile picture for ${sessionId}:`, ppError);
+            session.profilePhoto = undefined;
+          }
+
+          this.fastify.log.info(
+            `Fetched profile info for ${sessionId}: profileName=${session.profileName}, hasProfilePhoto=${!!session.profilePhoto}`
+          );
+        }
+      } catch (error) {
+        this.fastify.log.warn(`Failed to fetch profile info for ${sessionId}:`, error);
+      }
+
+      this.fastify.log.info(`Session ${sessionId} updated:`, {
+        status: session.status,
+        phoneNumber: session.phoneNumber,
+        profileName: session.profileName,
+        hasSocket: !!session.socket,
+      });
+
+      await this.saveSessionToDb(session);
+      this.fastify.log.info(`Session ${sessionId} saved to database with connected status`);
+
+      // Publish connection event with profile info
+      await this.publishEvent(sessionId, 'connected', {
+        phoneNumber: session.phoneNumber,
+        profileName: session.profileName,
+        profilePhoto: session.profilePhoto,
+      });
+
+      this.fastify.log.info(`Published connected event for session ${sessionId}`);
+    }
+  }
+
+  private async recreateSocket(sessionContext: {
+    sessionId: string;
+    organizationId: string;
+    sessionKey: string;
+  }) {
+    const { sessionId, organizationId, sessionKey } = sessionContext;
+    const session = this.sessions.get(sessionKey);
+
+    this.fastify.log.info(`Recreating socket for session ${sessionId}:`, {
+      foundSession: !!session,
+      sessionKey,
+      organizationId,
+    });
+
+    if (!session) {
+      this.fastify.log.error(`Session ${sessionId} not found during socket recreation`);
+      return;
+    }
+
+    try {
+      const sessionDir = path.join(process.cwd(), 'sessions', sessionId);
+      const { state, saveCreds } = await useMultiFileAuthState(sessionDir);
+
+      const socket = makeWASocket({
+        auth: state,
+        printQRInTerminal: false,
+        logger: this.fastify.log.child({ sessionId }),
+        markOnlineOnConnect: true,
+        qrTimeout: 120000, // 2 minutes QR timeout
+        connectTimeoutMs: 120000, // 2 minutes connect timeout
+        keepAliveIntervalMs: 30000, // Keep alive every 30 seconds
+        retryRequestDelayMs: 2000, // 2 second retry delay
+      });
+
+      session.socket = socket;
+
+      // Re-register event handlers
+      socket.ev.on('connection.update', update =>
+        this.handleConnectionUpdate(sessionContext, update)
+      );
+      socket.ev.on('creds.update', saveCreds);
+      socket.ev.on('messages.upsert', messageUpdate =>
+        this.handleMessages(sessionContext, messageUpdate)
+      );
+      socket.ev.on('messages.update', updates =>
+        this.handleMessageUpdates(sessionContext, updates)
+      );
+    } catch (error) {
+      this.fastify.log.error(`Failed to recreate socket for session ${sessionId}:`, error);
+      session.status = 'disconnected';
+      await this.saveSessionToDb(session);
+    }
+  }
+
+  private async handleMessages(
+    sessionContext: { sessionId: string; organizationId: string; sessionKey: string },
+    messageUpdate: any
+  ) {
+    const { sessionId, sessionKey } = sessionContext;
+    const session = this.sessions.get(sessionKey);
+
+    if (!session) {
+      this.fastify.log.warn(`Session ${sessionId} not found for message handling`);
+      return;
+    }
+
+    const messages = messageUpdate.messages;
+
+    for (const msg of messages) {
+      if (!msg.key.fromMe) {
+        // Incoming message
+        await this.saveIncomingMessage(session.organizationId, sessionId, msg);
+      }
+    }
+  }
+
+  private async handleMessageUpdates(
+    sessionContext: { sessionId: string; organizationId: string; sessionKey: string },
+    updates: any[]
+  ) {
+    const { sessionId } = sessionContext;
+    for (const update of updates) {
+      // Update message status in database
+      await this.updateMessageStatus(sessionId, update);
+    }
+  }
+
+  private async saveIncomingMessage(organizationId: string, sessionId: string, msg: WAMessage) {
+    try {
+      const messageContent = {
+        text: msg.message?.conversation || msg.message?.extendedTextMessage?.text,
+        type: this.getMessageType(msg),
+        timestamp: msg.messageTimestamp,
+        participant: msg.key.participant,
+      };
+
+      await db.insert(message).values({
+        id: createId(),
+        organizationId,
+        sessionId,
+        externalId: msg.key.id,
+        direction: 'inbound',
+        from: msg.key.remoteJid || '',
+        to: sessionId,
+        messageType: messageContent.type,
+        content: messageContent,
+        status: 'received',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+
+      // Track usage for incoming message
+      try {
+        if (this.fastify.billing) {
+          await this.fastify.billing.trackUsage(organizationId, 'messages_received', 1);
+        }
+      } catch (usageError) {
+        this.fastify.log.warn(
+          'Failed to track usage for incoming message:: ' +
+            (usageError instanceof Error ? usageError.message : String(usageError))
+        );
+      }
+
+      // Publish message event
+      await this.publishEvent(sessionId, 'message.received', {
+        messageId: msg.key.id,
+        from: msg.key.remoteJid,
+        content: messageContent,
+      });
+
+      // Send webhook notification
+      await this.webhookService.sendWebhook(
+        organizationId,
+        'message.received',
+        {
+          messageId: createId(),
+          sessionId,
+          from: msg.key.remoteJid,
+          content: messageContent,
+          timestamp: new Date(Number(msg.messageTimestamp) * 1000).toISOString(),
+        },
+        sessionId
+      );
+    } catch (error) {
+      this.fastify.log.error(
+        'Failed to save incoming message:: ' +
+          (error instanceof Error ? error.message : String(error))
+      );
+    }
+  }
+
+  private async updateMessageStatus(sessionId: string, update: any) {
+    try {
+      await db
+        .update(message)
+        .set({
+          status: this.mapBaileysStatus(update.update.status),
+          updatedAt: new Date(),
+        })
+        .where(eq(message.externalId, update.key.id));
+    } catch (error) {
+      this.fastify.log.error(
+        'Failed to update message status:: ' +
+          (error instanceof Error ? error.message : String(error))
+      );
+    }
+  }
+
+  private getMessageType(msg: WAMessage): string {
+    if (msg.message?.conversation || msg.message?.extendedTextMessage) return 'text';
+    if (msg.message?.imageMessage) return 'image';
+    if (msg.message?.videoMessage) return 'video';
+    if (msg.message?.audioMessage) return 'audio';
+    if (msg.message?.documentMessage) return 'document';
+    return 'unknown';
+  }
+
+  private mapBaileysStatus(status: number): string {
+    switch (status) {
+      case 0:
+        return 'pending';
+      case 1:
+        return 'sent';
+      case 2:
+        return 'delivered';
+      case 3:
+        return 'read';
+      default:
+        return 'unknown';
+    }
+  }
+
+  private async saveSessionToDb(session: BaileysSession) {
+    try {
+      const encryptedSessionBlob = session.socket
+        ? encryptData(JSON.stringify(session.socket.user || {}))
+        : null;
+
+      // Log the values we're trying to save
+      console.log('Attempting to save session to DB:', {
+        sessionId: session.id,
+        organizationId: session.organizationId,
+        status: session.status,
+        phoneNumber: session.phoneNumber,
+        hasSessionBlob: !!encryptedSessionBlob,
+        hasQrCode: !!session.qrCode,
+        lastActive: session.lastActive,
+      });
+
+      // Try to update first, then insert if not exists
+      const [existing] = await db
+        .select()
+        .from(whatsappSession)
+        .where(
+          and(
+            eq(whatsappSession.id, session.id),
+            eq(whatsappSession.organizationId, session.organizationId)
+          )
+        )
+        .limit(1);
+
+      console.log('Existing session found:', !!existing);
+
+      if (existing) {
+        console.log('Updating existing session...');
+        const result = await db
+          .update(whatsappSession)
+          .set({
+            status: session.status,
+            phoneNumber: session.phoneNumber,
+            profileName: session.profileName,
+            profilePhoto: session.profilePhoto,
+            sessionBlob: encryptedSessionBlob,
+            qrCode: session.qrCode,
+            lastActive: session.lastActive,
+            alwaysShowOnline: session.alwaysShowOnline ?? true,
+            autoRejectCalls: session.autoRejectCalls ?? false,
+            antiBanSubscribe: session.antiBanSubscribe ?? false,
+            antiBanStrictMode: session.antiBanStrictMode ?? false,
+            webhookUrl: session.webhookUrl,
+            webhookMethod: session.webhookMethod ?? 'POST',
+            manuallyDisconnected: session.manuallyDisconnected ?? false,
+            updatedAt: new Date(),
+          })
+          .where(
+            and(
+              eq(whatsappSession.id, session.id),
+              eq(whatsappSession.organizationId, session.organizationId)
+            )
+          );
+        console.log('Update result:', result);
+      } else {
+        console.log('Inserting new session...');
+        const insertData = {
+          id: session.id,
+          organizationId: session.organizationId,
+          name: `Session ${session.id}`,
+          phoneNumber: session.phoneNumber,
+          profileName: session.profileName,
+          profilePhoto: session.profilePhoto,
+          status: session.status,
+          sessionBlob: encryptedSessionBlob,
+          qrCode: session.qrCode,
+          lastActive: session.lastActive,
+          alwaysShowOnline: session.alwaysShowOnline ?? true,
+          autoRejectCalls: session.autoRejectCalls ?? false,
+          antiBanSubscribe: session.antiBanSubscribe ?? false,
+          antiBanStrictMode: session.antiBanStrictMode ?? false,
+          webhookUrl: session.webhookUrl,
+          webhookMethod: session.webhookMethod ?? 'POST',
+          manuallyDisconnected: session.manuallyDisconnected ?? false,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        };
+        console.log('Insert data:', insertData);
+
+        const result = await db.insert(whatsappSession).values(insertData);
+        console.log('Insert result:', result);
+      }
+
+      console.log('Session saved successfully to database');
+    } catch (error) {
+      this.fastify.log.error(
+        'Failed to save session to database:: ' +
+          ({
+            error: error instanceof Error ? error.message : error,
+            stack: error instanceof Error ? error.stack : undefined,
+            sessionId: session.id,
+            organizationId: session.organizationId,
+            status: session.status,
+            fullError: error,
+          } instanceof Error
+            ? {
+                error: error instanceof Error ? error.message : error,
+                stack: error instanceof Error ? error.stack : undefined,
+                sessionId: session.id,
+                organizationId: session.organizationId,
+                status: session.status,
+                fullError: error,
+              }.message
+            : String({
+                error: error instanceof Error ? error.message : error,
+                stack: error instanceof Error ? error.stack : undefined,
+                sessionId: session.id,
+                organizationId: session.organizationId,
+                status: session.status,
+                fullError: error,
+              }))
+      );
+
+      // Log the full error details to understand what's failing
+      console.error('Database save error details:', error);
+      console.error('Error name:', error instanceof Error ? error.name : 'unknown');
+      console.error('Error cause:', error instanceof Error ? error.cause : 'none');
+
+      // Don't re-throw to prevent breaking the WhatsApp connection flow
+    }
+  }
+
+  private async restoreSession(dbSession: any) {
+    const sessionDir = path.join(process.cwd(), 'sessions', dbSession.id);
+
+    try {
+      // Check if session directory exists
+      await fs.access(sessionDir);
+
+      // Try to restore the session
+      await this.createSession(dbSession.id, dbSession.organizationId);
+    } catch (error) {
+      throw new Error(
+        `Cannot restore session: ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
+    }
+  }
+
+  private async publishEvent(sessionId: string, event: string, data: any) {
+    try {
+      const eventPayload = { event, data, timestamp: new Date().toISOString() };
+      const channel = `whatsapp:session:${sessionId}`;
+
+      this.fastify.log.info(`Publishing Redis event to channel ${channel}:`, eventPayload);
+
+      await this.fastify.redis.publish(channel, JSON.stringify(eventPayload));
+
+      this.fastify.log.info(`Successfully published Redis event to channel ${channel}`);
+    } catch (error) {
+      this.fastify.log.error(
+        'Failed to publish Redis event:: ' +
+          (error instanceof Error ? error.message : String(error))
+      );
+    }
+  }
+
+  async saveOutgoingMessage(
+    organizationId: string,
+    sessionId: string,
+    messageId: string,
+    to: string,
+    content: string,
+    result: any
+  ) {
+    try {
+      await db.insert(message).values({
+        id: messageId,
+        organizationId,
+        sessionId,
+        externalId: result.key?.id,
+        direction: 'outbound',
+        from: sessionId,
+        to,
+        messageType: 'text',
+        content: { text: content },
+        status: 'sent',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+
+      // Publish message event
+      await this.publishEvent(sessionId, 'message.sent', {
+        messageId,
+        to,
+        content: { text: content },
+      });
+    } catch (error) {
+      this.fastify.log.error(
+        'Failed to save outgoing message:: ' +
+          (error instanceof Error ? error.message : String(error))
+      );
+    }
+  }
+
+  async updateSessionSettings(
+    sessionId: string,
+    organizationId: string,
+    settings: {
+      alwaysShowOnline?: boolean;
+      autoRejectCalls?: boolean;
+      antiBanSubscribe?: boolean;
+      antiBanStrictMode?: boolean;
+      webhookUrl?: string;
+      webhookMethod?: string;
+    }
+  ): Promise<void> {
+    // Update in-memory session if exists
+    const sessionKey = `${organizationId}:${sessionId}`;
+    const session = this.sessions.get(sessionKey);
+    if (session) {
+      Object.assign(session, settings);
+    }
+
+    // Update database
+    await db
+      .update(whatsappSession)
+      .set({
+        ...settings,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(eq(whatsappSession.id, sessionId), eq(whatsappSession.organizationId, organizationId))
+      );
+
+    this.fastify.log.info(`Updated settings for session ${sessionId}:`, settings);
+  }
+
+  async reconnectSession(sessionId: string, organizationId: string): Promise<void> {
+    this.fastify.log.info(`Starting reconnection for session ${sessionId}`);
+
+    // Clear manually disconnected flag and attempt reconnection
+    await db
+      .update(whatsappSession)
+      .set({
+        manuallyDisconnected: false,
+        status: 'connecting',
+        updatedAt: new Date(),
+      })
+      .where(
+        and(eq(whatsappSession.id, sessionId), eq(whatsappSession.organizationId, organizationId))
+      );
+
+    // Publish connecting event immediately
+    await this.publishEvent(sessionId, 'connecting', {
+      reason: 'manual_reconnect',
+      status: 'connecting',
+      manuallyDisconnected: false,
+    });
+
+    const sessionKey = `${organizationId}:${sessionId}`;
+
+    // Remove existing session from memory if it exists
+    if (this.sessions.has(sessionKey)) {
+      const existingSession = this.sessions.get(sessionKey);
+      if (existingSession?.socket) {
+        existingSession.socket.end(undefined);
+      }
+      this.sessions.delete(sessionKey);
+    }
+
+    // Try to create new session
+    try {
+      await this.createSession(sessionId, organizationId);
+      this.fastify.log.info(`Successfully initiated reconnection for session ${sessionId}`);
+    } catch (error) {
+      this.fastify.log.error(`Failed to reconnect session ${sessionId}:`, error);
+
+      // Update status to failed and publish event
+      await db
+        .update(whatsappSession)
+        .set({
+          status: 'disconnected',
+          updatedAt: new Date(),
+        })
+        .where(
+          and(eq(whatsappSession.id, sessionId), eq(whatsappSession.organizationId, organizationId))
+        );
+
+      await this.publishEvent(sessionId, 'disconnected', { reason: 'reconnect_failed' });
+      throw error;
+    }
+  }
+
+  async deleteSession(sessionId: string, organizationId: string): Promise<void> {
+    try {
+      this.fastify.log.info(
+        `Starting deletion of session ${sessionId} for organization ${organizationId}`
+      );
+
+      const sessionKey = `${organizationId}:${sessionId}`;
+      const session = this.sessions.get(sessionKey);
+
+      this.fastify.log.info(`Session found in memory: ${!!session}`);
+
+      // Disconnect if connected
+      if (session?.socket) {
+        try {
+          this.fastify.log.info(`Closing socket for session ${sessionId}`);
+          session.socket.end(undefined);
+        } catch (error) {
+          this.fastify.log.error(`Failed to close socket for session ${sessionId}:`, error);
+        }
+      }
+
+      // Remove from memory
+      this.sessions.delete(sessionKey);
+      this.fastify.log.info(`Removed session ${sessionId} from memory`);
+
+      // Delete related messages first (due to foreign key constraints)
+      this.fastify.log.info(`Deleting messages for session ${sessionId}`);
+      await db
+        .delete(message)
+        .where(and(eq(message.sessionId, sessionId), eq(message.organizationId, organizationId)));
+
+      // Delete from database
+      this.fastify.log.info(`Deleting session ${sessionId} from database`);
+      const deleteResult = await db
+        .delete(whatsappSession)
+        .where(
+          and(eq(whatsappSession.id, sessionId), eq(whatsappSession.organizationId, organizationId))
+        );
+
+      this.fastify.log.info(`Database deletion result for session ${sessionId}:`, deleteResult);
+
+      // Delete auth directories if they exist
+      const authDirs = [
+        path.join(process.cwd(), 'baileys_auth', sessionId),
+        path.join(process.cwd(), 'sessions', sessionId),
+      ];
+
+      for (const authDir of authDirs) {
+        try {
+          await fs.rm(authDir, { recursive: true, force: true });
+          this.fastify.log.info(`Deleted auth directory: ${authDir}`);
+        } catch (error) {
+          this.fastify.log.warn(`Failed to delete auth directory ${authDir}:`, error);
+        }
+      }
+
+      // Publish deletion event
+      await this.publishEvent(sessionId, 'deleted', { organizationId });
+
+      this.fastify.log.info(
+        `Session ${sessionId} deleted successfully for organization ${organizationId}`
+      );
+    } catch (error) {
+      this.fastify.log.error(`Failed to delete session ${sessionId}:`, {
+        error: error instanceof Error ? error.message : error,
+        stack: error instanceof Error ? error.stack : undefined,
+        sessionId,
+        organizationId,
+      });
+      throw error;
+    }
+  }
+
+  startWebhookRetryTask() {
+    this.webhookService.startRetryTask();
+  }
+
+  // Clean up on app shutdown
+  async cleanup() {
+    this.fastify.log.info('Cleaning up Baileys sessions...');
+
+    // Cleanup webhook service
+    await this.webhookService.cleanup();
+
+    for (const [sessionId, session] of this.sessions.entries()) {
+      if (session.socket) {
+        try {
+          session.socket.end(undefined);
+        } catch (error) {
+          this.fastify.log.error(`Failed to close session ${sessionId}:`, error);
+        }
+      }
+    }
+
+    this.sessions.clear();
+  }
+}

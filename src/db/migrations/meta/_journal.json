@@ -1,0 +1,48 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1756647298195,
+      "tag": "0000_tan_zeigeist",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1756711027719,
+      "tag": "0001_left_clea",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1756712514093,
+      "tag": "0002_graceful_the_renegades",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1756735527991,
+      "tag": "0003_futuristic_magus",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1756752829107,
+      "tag": "0004_faulty_firelord",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1756762550713,
+      "tag": "0005_early_joshua_kane",
+      "breakpoints": true
+    }
+  ]
+}
