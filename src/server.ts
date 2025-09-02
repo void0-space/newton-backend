@@ -74,7 +74,7 @@ async function start() {
       origin:
         fastify.config.NODE_ENV === 'development'
           ? ['http://localhost:3000', 'http://localhost:3001'] // Admin & Web portals
-          : fastify.config.CLIENT_ORIGINS?.split(',') || [],
+          : ['https://api.newton.ink', 'https://www.newton.ink', 'https://newton.ink'],
       methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
       allowedHeaders: [
         'Content-Type',
@@ -94,7 +94,7 @@ async function start() {
 
     // Register global analytics middleware hooks directly
     fastify.log.info('Server: Registering global analytics hooks...');
-    
+
     // Pre-handler to capture request start time
     fastify.addHook('preHandler', async (request: FastifyRequest, reply) => {
       // Only track the messages send API endpoint
@@ -102,7 +102,9 @@ async function start() {
         return;
       }
 
-      fastify.log.info(`Global Analytics: Setting up tracking for ${request.method} ${request.url}`);
+      fastify.log.info(
+        `Global Analytics: Setting up tracking for ${request.method} ${request.url}`
+      );
       (request as any).analyticsData = {
         startTime: Date.now(),
       };
@@ -113,8 +115,10 @@ async function start() {
       if (!(request as any).analyticsData) return;
 
       try {
-        fastify.log.info(`Global Analytics: Processing response for ${request.method} ${request.url}`);
-        
+        fastify.log.info(
+          `Global Analytics: Processing response for ${request.method} ${request.url}`
+        );
+
         const responseTime = Date.now() - (request as any).analyticsData.startTime;
         const success = reply.statusCode >= 200 && reply.statusCode < 400;
 
@@ -131,7 +135,9 @@ async function start() {
           organizationId = (request as any).organization.id;
         }
 
-        fastify.log.info(`Global Analytics: Organization context - organizationId: ${organizationId}, success: ${success}`);
+        fastify.log.info(
+          `Global Analytics: Organization context - organizationId: ${organizationId}, success: ${success}`
+        );
 
         if (organizationId) {
           // Extract message-specific data from request body
@@ -157,11 +163,11 @@ async function start() {
               if (payload && typeof payload === 'string' && payload.length < 5000) {
                 const parsed = JSON.parse(payload);
                 responseBody = parsed;
-                
+
                 if (parsed.messageId) {
                   messageId = parsed.messageId;
                 }
-                
+
                 if (!success && parsed.error) {
                   errorMessage = parsed.error;
                   errorCode = parsed.code;
@@ -197,12 +203,19 @@ async function start() {
             success,
           });
 
-          fastify.log.info(`Global Analytics: Successfully saved data for ${request.method} ${request.url}`);
+          fastify.log.info(
+            `Global Analytics: Successfully saved data for ${request.method} ${request.url}`
+          );
         } else {
-          fastify.log.warn(`Global Analytics: No organization context for ${request.method} ${request.url}`);
+          fastify.log.warn(
+            `Global Analytics: No organization context for ${request.method} ${request.url}`
+          );
         }
       } catch (error) {
-        fastify.log.error(`Global Analytics: Error processing ${request.method} ${request.url}:`, error);
+        fastify.log.error(
+          `Global Analytics: Error processing ${request.method} ${request.url}:`,
+          error
+        );
       }
     });
 
