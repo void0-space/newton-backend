@@ -32,6 +32,7 @@ export const auth = betterAuth({
     'http://localhost:4001', // Backend
     'https://newton.ink',
     'https://www.newton.ink',
+    'https://api.newton.ink',
   ],
 });
 
