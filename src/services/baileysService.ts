@@ -85,7 +85,7 @@ export class BaileysManager {
         connectTimeoutMs: 120000, // 2 minutes connect timeout
         keepAliveIntervalMs: 30000, // Keep alive every 30 seconds
         retryRequestDelayMs: 2000, // 2 second retry delay
-        browser: Browsers.ubuntu('Newton API'),
+        browser: ['Newton', 'Desktop', '1.0.0'],
       });
 
       session.socket = socket;
