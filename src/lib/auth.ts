@@ -29,7 +29,7 @@ export const auth = betterAuth({
   advanced: {
     crossSubDomainCookies: {
       enabled: true,
-      domain: 'newton.ink', // your domain
+      domain: 'https://newton.ink', // your domain
     },
   },
   trustedOrigins: [
