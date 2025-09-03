@@ -26,6 +26,12 @@ export const auth = betterAuth({
   plugins: [organization(), admin(), apiKey({ enableMetadata: true })],
   secret: process.env['BETTER_AUTH_SECRET']!,
   baseURL: process.env['BETTER_AUTH_URL'] || 'http://localhost:4001',
+  advanced: {
+    crossSubDomainCookies: {
+      enabled: true,
+      domain: 'newton.ink', // your domain
+    },
+  },
   trustedOrigins: [
     'http://localhost:3000', // Admin dashboard
     'http://localhost:3001', // Web portal
