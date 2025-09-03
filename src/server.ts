@@ -71,10 +71,13 @@ async function start() {
     });
 
     await fastify.register(cors, {
-      origin:
-        fastify.config.NODE_ENV === 'development'
-          ? ['http://localhost:3000', 'http://localhost:3001'] // Admin & Web portals
-          : ['https://api.newton.ink', 'https://www.newton.ink', 'https://newton.ink'],
+      origin: [
+        'http://localhost:3000',
+        'http://localhost:3001',
+        'https://api.newton.ink',
+        'https://www.newton.ink',
+        'https://newton.ink',
+      ], // Admin & Web portals
       methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
       allowedHeaders: [
         'Content-Type',
