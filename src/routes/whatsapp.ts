@@ -196,10 +196,10 @@ const whatsappRoutes: FastifyPluginAsync = async fastify => {
   fastify.get('/messages', { preHandler: sessionAuthMiddleware }, getMessages);
 
   // Message sending routes
-  // Internal route for admin panel - require session auth (no billing)
+  // Internal route for admin panel - require session auth
   fastify.post('/internal/send', { preHandler: sessionAuthMiddleware }, internalSendMessage);
 
-  // Public API route - require API key (billable)
+  // Public API route - require API key
   fastify.post('/send', { preHandler: apiKeyAuthMiddleware }, sendMessage);
 };
 

@@ -65,3 +65,5 @@ dist
 # Temporary folders
 tmp/
 temp/
+
+sessions/

@@ -10,11 +10,15 @@ export * from './contacts';
 // Scheduled messages schema
 export * from './scheduled';
 
-// Billing schema
-export * from './billing';
 
 // Webhooks schema
 export * from './webhooks';
 
 // Analytics schema
 export * from './analytics';
+
+// Auto reply schema
+export * from './autoreply';
+
+// Campaigns schema
+export * from './campaigns';

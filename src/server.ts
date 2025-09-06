@@ -17,15 +17,15 @@ import organizationRoutes from './routes/organizations';
 import whatsappRoutes from './routes/whatsapp';
 import messageRoutes from './routes/messages';
 import mediaRoutes from './routes/media';
-import billingRoutes from './routes/billing';
 import contactsRoutes from './routes/contacts';
 import scheduledRoutes from './routes/scheduled';
 import analyticsRoutes from './routes/analytics';
+import autoReplyRoutes from './routes/autoReply';
+import campaignRoutes from './routes/campaigns';
 
 // Import plugins
 import baileysPlugin from './plugins/baileys';
 import storagePlugin from './plugins/storage';
-import billingPlugin from './plugins/billing';
 import { envSchema } from './schema/env';
 import { auth } from './lib/auth';
 
@@ -228,7 +228,6 @@ async function start() {
 
     // Register service plugins
     await fastify.register(storagePlugin);
-    await fastify.register(billingPlugin);
     await fastify.register(baileysPlugin);
 
     // Initialize scheduler with baileys manager
@@ -282,10 +281,11 @@ async function start() {
     await fastify.register(whatsappRoutes, { prefix: '/api/v1/whatsapp' });
     await fastify.register(messageRoutes, { prefix: '/api/v1/messages' });
     await fastify.register(mediaRoutes, { prefix: '/api/v1/media' });
-    await fastify.register(billingRoutes, { prefix: '/api/v1/billing' });
     await fastify.register(contactsRoutes, { prefix: '/api/v1/contacts' });
     await fastify.register(scheduledRoutes, { prefix: '/api/v1/scheduled' });
     await fastify.register(analyticsRoutes, { prefix: '/api/v1/analytics' });
+    await fastify.register(autoReplyRoutes, { prefix: '/api/v1' });
+    await fastify.register(campaignRoutes, { prefix: '/api/v1/campaigns' });
 
     // TODO: Add test endpoint after fixing middleware decorators
 

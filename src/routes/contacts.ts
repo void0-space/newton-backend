@@ -53,6 +53,8 @@ const contactsRoutes: FastifyPluginAsync = async fastify => {
   // Import/Export routes
   fastify.post('/import', { preHandler: sessionAuthMiddleware }, importContacts);
   fastify.get('/export', { preHandler: sessionAuthMiddleware }, exportContacts);
+
+  // Note: WhatsApp contacts and groups are now automatically synced via socket events
 };
 
 export default contactsRoutes;

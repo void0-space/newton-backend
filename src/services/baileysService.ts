@@ -5,6 +5,8 @@ import makeWASocket, {
   WAMessage,
   ConnectionState,
   Browsers,
+  Contact,
+  GroupMetadata,
 } from '@whiskeysockets/baileys';
 import QRCode from 'qrcode';
 import { FastifyInstance } from 'fastify';
@@ -16,6 +18,7 @@ import { createId } from '@paralleldrive/cuid2';
 import fs from 'fs/promises';
 import path from 'path';
 import { WebhookService } from './webhookService';
+import { AutoReplyService } from './autoReplyService';
 
 export interface BaileysSession {
   id: string;
@@ -43,10 +46,13 @@ export class BaileysManager {
   private sessions: Map<string, BaileysSession> = new Map();
   private fastify: FastifyInstance;
   private webhookService: WebhookService;
+  private autoReplyService: AutoReplyService;
 
   constructor(fastify: FastifyInstance) {
     this.fastify = fastify;
     this.webhookService = new WebhookService(fastify);
+    this.autoReplyService = new AutoReplyService();
+    this.autoReplyService.setBaileysManager(this);
   }
 
   async createSession(sessionId: string, organizationId: string): Promise<BaileysSession> {
@@ -81,6 +87,7 @@ export class BaileysManager {
         logger: this.fastify.log.child({ sessionId }),
         markOnlineOnConnect: true,
         generateHighQualityLinkPreview: true,
+        syncFullHistory: true,
         qrTimeout: 120000, // 2 minutes QR timeout
         connectTimeoutMs: 120000, // 2 minutes connect timeout
         keepAliveIntervalMs: 30000, // Keep alive every 30 seconds
@@ -104,12 +111,34 @@ export class BaileysManager {
 
       // Handle messages
       socket.ev.on('messages.upsert', async messageUpdate => {
+        this.fastify.log.info(
+          `🚀 messages.upsert event fired for session ${sessionId}!: ${JSON.stringify(messageUpdate.messages)}`
+        );
         await this.handleMessages(sessionContext, messageUpdate);
       });
 
       // Handle message status updates
       socket.ev.on('messages.update', async updates => {
+        this.fastify.log.info(
+          `🔄 messages.update event fired for session ${sessionId}: ${JSON.stringify(updates)}`
+        );
         await this.handleMessageUpdates(sessionContext, updates);
+      });
+
+      // Handle contacts sync
+      socket.ev.on('contacts.upsert', async contacts => {
+        this.fastify.log.info(
+          `👥 contacts.upsert event fired for session ${sessionId}: ${JSON.stringify(contacts)}`
+        );
+        await this.handleContactsUpsert(sessionContext, contacts);
+      });
+
+      // Handle groups sync
+      socket.ev.on('groups.upsert', async groups => {
+        this.fastify.log.info(
+          `👫 groups.upsert event fired for session ${sessionId}: ${JSON.stringify(groups)}`
+        );
+        await this.handleGroupsUpsert(sessionContext, groups);
       });
 
       // Save initial session to database
@@ -271,6 +300,20 @@ export class BaileysManager {
       this.fastify.log.error(`Error in disconnectSession for ${sessionId}:`, error);
       throw error;
     }
+  }
+
+  async debugSessions(): Promise<any> {
+    console.log(`🔍 Current sessions in memory:`, this.sessions.size);
+    const sessionInfo = Array.from(this.sessions.entries()).map(([key, session]) => ({
+      key,
+      id: session.id,
+      status: session.status,
+      organizationId: session.organizationId,
+      phoneNumber: session.phoneNumber,
+      hasSocket: !!session.socket,
+    }));
+    console.log(`Session details:`, sessionInfo);
+    return sessionInfo;
   }
 
   async listSessions(organizationId: string): Promise<BaileysSession[]> {
@@ -513,14 +556,17 @@ export class BaileysManager {
       session.qrCode = null;
       session.phoneNumber = session.socket?.user?.id?.split(':')[0];
       session.lastActive = new Date();
+      const [result] = await session.socket.onWhatsApp(session.socket.user.id);
 
+      this.fastify.log.info(`👤 onWhatsApp result:${JSON.stringify(result)} ${session.socket}`);
       // Fetch profile information
       try {
         if (session.socket && session.phoneNumber) {
+          this.fastify.log.info(
+            `Fetching profile info for session ${sessionId}: ${JSON.stringify(session.socket.user)}`
+          );
           const profileInfo = await session.socket.fetchStatus(session.socket.user?.id);
-          session.profileName =
-            profileInfo?.status || session.socket.user?.name || session.phoneNumber;
-
+          session.profileName = session.socket.user?.notify || session.socket.user?.name || '-';
           // Try to get profile picture
           try {
             const ppUrl = await session.socket.profilePictureUrl(session.socket.user?.id, 'image');
@@ -606,6 +652,10 @@ export class BaileysManager {
       socket.ev.on('messages.update', updates =>
         this.handleMessageUpdates(sessionContext, updates)
       );
+      socket.ev.on('contacts.upsert', contacts =>
+        this.handleContactsUpsert(sessionContext, contacts)
+      );
+      socket.ev.on('groups.upsert', groups => this.handleGroupsUpsert(sessionContext, groups));
     } catch (error) {
       this.fastify.log.error(`Failed to recreate socket for session ${sessionId}:`, error);
       session.status = 'disconnected';
@@ -620,6 +670,9 @@ export class BaileysManager {
     const { sessionId, sessionKey } = sessionContext;
     const session = this.sessions.get(sessionKey);
 
+    console.log(`📥 handleMessages called for session ${sessionId}`);
+    console.log(`Messages received:`, messageUpdate.messages?.length || 0);
+
     if (!session) {
       this.fastify.log.warn(`Session ${sessionId} not found for message handling`);
       return;
@@ -628,9 +681,15 @@ export class BaileysManager {
     const messages = messageUpdate.messages;
 
     for (const msg of messages) {
+      console.log(
+        `Processing message - fromMe: ${msg.key.fromMe}, remoteJid: ${msg.key.remoteJid}`
+      );
       if (!msg.key.fromMe) {
+        console.log(`🔥 Incoming message detected! Processing...`);
         // Incoming message
         await this.saveIncomingMessage(session.organizationId, sessionId, msg);
+      } else {
+        console.log(`⚡ Outgoing message, skipping...`);
       }
     }
   }
@@ -648,12 +707,19 @@ export class BaileysManager {
 
   private async saveIncomingMessage(organizationId: string, sessionId: string, msg: WAMessage) {
     try {
+      console.log(`💾 saveIncomingMessage called for session ${sessionId}`);
       const messageContent = {
         text: msg.message?.conversation || msg.message?.extendedTextMessage?.text,
         type: this.getMessageType(msg),
         timestamp: msg.messageTimestamp,
         participant: msg.key.participant,
       };
+
+      console.log(`📝 Message content:`, {
+        text: messageContent.text,
+        type: messageContent.type,
+        from: msg.key.remoteJid,
+      });
 
       await db.insert(message).values({
         id: createId(),
@@ -671,16 +737,7 @@ export class BaileysManager {
       });
 
       // Track usage for incoming message
-      try {
-        if (this.fastify.billing) {
-          await this.fastify.billing.trackUsage(organizationId, 'messages_received', 1);
-        }
-      } catch (usageError) {
-        this.fastify.log.warn(
-          'Failed to track usage for incoming message:: ' +
-            (usageError instanceof Error ? usageError.message : String(usageError))
-        );
-      }
+      // Usage tracking removed
 
       // Publish message event
       await this.publishEvent(sessionId, 'message.received', {
@@ -702,6 +759,25 @@ export class BaileysManager {
         },
         sessionId
       );
+
+      // Process auto reply
+      try {
+        const incomingMessage = {
+          messageId: msg.key.id || createId(),
+          from: msg.key.remoteJid || '',
+          text: messageContent.text || '',
+          whatsappAccountId: sessionId,
+          organizationId,
+          timestamp: new Date(Number(msg.messageTimestamp) * 1000),
+        };
+
+        await this.autoReplyService.processIncomingMessage(incomingMessage);
+      } catch (autoReplyError) {
+        this.fastify.log.warn(
+          'Failed to process auto reply for incoming message: ' +
+            (autoReplyError instanceof Error ? autoReplyError.message : String(autoReplyError))
+        );
+      }
     } catch (error) {
       this.fastify.log.error(
         'Failed to save incoming message:: ' +
@@ -724,6 +800,209 @@ export class BaileysManager {
         'Failed to update message status:: ' +
           (error instanceof Error ? error.message : String(error))
       );
+    }
+  }
+
+  private async handleContactsUpsert(
+    sessionContext: { sessionId: string; organizationId: string; sessionKey: string },
+    contacts: Contact[]
+  ) {
+    const { sessionId, organizationId } = sessionContext;
+
+    try {
+      this.fastify.log.info(`Processing ${contacts.length} contacts from WhatsApp`);
+
+      // Import contact schema
+      const { contact } = await import('../db/schema');
+      const { createId } = await import('@paralleldrive/cuid2');
+
+      for (const waContact of contacts) {
+        try {
+          const phoneNumber = waContact.id.split('@')[0];
+
+          // Skip if not a valid phone number
+          if (!phoneNumber.match(/^\d+$/)) {
+            continue;
+          }
+
+          // Check if contact already exists
+          const [existingContact] = await db
+            .select()
+            .from(contact)
+            .where(and(eq(contact.organizationId, organizationId), eq(contact.phone, phoneNumber)))
+            .limit(1);
+
+          if (existingContact) {
+            // Update existing contact
+            await db
+              .update(contact)
+              .set({
+                name: waContact.name || waContact.notify || waContact.verifiedName || '-',
+                tags: [...(existingContact.tags || []), 'whatsapp-sync'],
+                updatedAt: new Date(),
+              })
+              .where(eq(contact.id, existingContact.id));
+
+            this.fastify.log.info(`Updated contact: ${phoneNumber}`);
+          } else {
+            // Create new contact
+            const newContact = {
+              id: createId(),
+              organizationId,
+              name: waContact.name || waContact.notify || waContact.verifiedName || '-',
+              phone: phoneNumber,
+              email: null,
+              groups: [],
+              tags: ['whatsapp-sync'],
+              notes: `Auto-synced from WhatsApp session ${sessionId}`,
+              createdAt: new Date(),
+              updatedAt: new Date(),
+            };
+
+            await db.insert(contact).values(newContact);
+            this.fastify.log.info(`Created contact: ${phoneNumber} (${newContact.name})`);
+          }
+        } catch (contactError) {
+          this.fastify.log.warn(`Failed to process contact ${waContact.id}:`, contactError);
+        }
+      }
+
+      this.fastify.log.info(`Successfully processed ${contacts.length} WhatsApp contacts`);
+    } catch (error) {
+      this.fastify.log.error(`Error handling contacts upsert for session ${sessionId}:`, error);
+    }
+  }
+
+  private async handleGroupsUpsert(
+    sessionContext: { sessionId: string; organizationId: string; sessionKey: string },
+    groups: GroupMetadata[]
+  ) {
+    const { sessionId, organizationId } = sessionContext;
+
+    try {
+      this.fastify.log.info(`Processing ${groups.length} groups from WhatsApp`);
+
+      // Import schemas
+      const { contact, contactGroup } = await import('../db/schema');
+      const { createId } = await import('@paralleldrive/cuid2');
+
+      for (const waGroup of groups) {
+        try {
+          // Skip if not a group
+          if (!waGroup.id.includes('@g.us')) {
+            continue;
+          }
+
+          // Check if group already exists
+          const [existingGroup] = await db
+            .select()
+            .from(contactGroup)
+            .where(
+              and(
+                eq(contactGroup.organizationId, organizationId),
+                eq(contactGroup.whatsappGroupId, waGroup.id)
+              )
+            )
+            .limit(1);
+
+          if (existingGroup) {
+            // Update existing group
+            await db
+              .update(contactGroup)
+              .set({
+                name: waGroup.subject || 'Unknown Group',
+                description: waGroup.desc || '',
+                participantCount: waGroup.participants?.length || 0,
+                updatedAt: new Date(),
+              })
+              .where(eq(contactGroup.id, existingGroup.id));
+
+            this.fastify.log.info(`Updated group: ${waGroup.subject}`);
+          } else {
+            // Create new group
+            const newGroup = {
+              id: createId(),
+              organizationId,
+              name: waGroup.subject || 'Unknown Group',
+              description: waGroup.desc || '',
+              whatsappGroupId: waGroup.id,
+              participantCount: waGroup.participants?.length || 0,
+              createdAt: new Date(),
+              updatedAt: new Date(),
+            };
+
+            await db.insert(contactGroup).values(newGroup);
+            this.fastify.log.info(
+              `Created group: ${waGroup.subject} with ${waGroup.participants?.length || 0} participants`
+            );
+          }
+
+          // Sync group participants as contacts
+          if (waGroup.participants) {
+            for (const participant of waGroup.participants) {
+              try {
+                const phoneNumber = participant.id.split('@')[0];
+
+                if (!phoneNumber.match(/^\d+$/)) {
+                  continue;
+                }
+
+                // Check if participant contact exists
+                const [existingContact] = await db
+                  .select()
+                  .from(contact)
+                  .where(
+                    and(eq(contact.organizationId, organizationId), eq(contact.phone, phoneNumber))
+                  )
+                  .limit(1);
+
+                if (existingContact) {
+                  // Add group to existing contact's groups
+                  const currentGroups = existingContact.groups || [];
+                  const groupName = waGroup.subject || 'Unknown Group';
+                  if (!currentGroups.includes(groupName)) {
+                    await db
+                      .update(contact)
+                      .set({
+                        groups: [...currentGroups, groupName],
+                        tags: [...(existingContact.tags || []), 'whatsapp-group'],
+                        updatedAt: new Date(),
+                      })
+                      .where(eq(contact.id, existingContact.id));
+                  }
+                } else {
+                  // Create new contact from group participant
+                  const newContact = {
+                    id: createId(),
+                    organizationId,
+                    name: participant.notify || participant.verifiedName || phoneNumber,
+                    phone: phoneNumber,
+                    email: null,
+                    groups: [waGroup.subject || 'Unknown Group'],
+                    tags: ['whatsapp-group'],
+                    notes: `Auto-synced from WhatsApp group: ${waGroup.subject}`,
+                    createdAt: new Date(),
+                    updatedAt: new Date(),
+                  };
+
+                  await db.insert(contact).values(newContact);
+                }
+              } catch (participantError) {
+                this.fastify.log.warn(
+                  `Failed to process participant ${participant.id}:`,
+                  participantError
+                );
+              }
+            }
+          }
+        } catch (groupError) {
+          this.fastify.log.warn(`Failed to process group ${waGroup.id}:`, groupError);
+        }
+      }
+
+      this.fastify.log.info(`Successfully processed ${groups.length} WhatsApp groups`);
+    } catch (error) {
+      this.fastify.log.error(`Error handling groups upsert for session ${sessionId}:`, error);
     }
   }
 

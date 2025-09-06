@@ -265,11 +265,9 @@ export async function sendMessage(request: FastifyRequest, reply: FastifyReply) 
       result
     );
 
-    // Track usage for API billing
+    // Usage tracking removed
     try {
-      if (request.server.billing) {
-        await request.server.billing.trackUsage(organizationId, 'messages_sent', 1);
-      }
+      // Billing tracking removed
     } catch (usageError) {
       request.log.warn(
         'API: Failed to track usage: ' +

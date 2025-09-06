@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, jsonb } from 'drizzle-orm/pg-core';
+import { pgTable, text, timestamp, jsonb, integer } from 'drizzle-orm/pg-core';
 import { organization } from './auth';
 
 export const contact = pgTable('contact', {
@@ -24,6 +24,8 @@ export const contactGroup = pgTable('contact_group', {
   name: text('name').notNull(),
   description: text('description'),
   color: text('color'), // hex color for UI
+  whatsappGroupId: text('whatsapp_group_id'), // WhatsApp group JID (e.g., 123456@g.us)
+  participantCount: integer('participant_count').default(0),
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
 });

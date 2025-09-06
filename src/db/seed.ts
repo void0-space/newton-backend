@@ -1,5 +1,5 @@
 import { db } from './drizzle';
-import { user, organization, member, plan } from './schema';
+import { user, organization, member } from './schema';
 import bcrypt from 'bcryptjs';
 import { createId } from '@paralleldrive/cuid2';
 
@@ -45,48 +45,6 @@ async function seed() {
     });
 
     console.log(`✅ Added admin user to organization`);
-
-    // Create default pricing plans
-    const plans = [
-      {
-        id: createId(),
-        name: 'Starter',
-        description: 'Perfect for small businesses getting started',
-        monthlyPrice: '999.00',
-        includedMessages: 1000,
-        maxSessions: 1,
-        features: ['1 WhatsApp Session', '1,000 messages/month', 'Basic support'],
-      },
-      {
-        id: createId(),
-        name: 'Professional',
-        description: 'For growing businesses with higher volume needs',
-        monthlyPrice: '2999.00',
-        includedMessages: 5000,
-        maxSessions: 3,
-        features: ['3 WhatsApp Sessions', '5,000 messages/month', 'Priority support', 'Webhooks'],
-      },
-      {
-        id: createId(),
-        name: 'Enterprise',
-        description: 'For large-scale operations',
-        monthlyPrice: '9999.00',
-        includedMessages: 25000,
-        maxSessions: 10,
-        features: [
-          '10 WhatsApp Sessions',
-          '25,000 messages/month',
-          '24/7 support',
-          'Webhooks',
-          'Custom integrations',
-        ],
-      },
-    ];
-
-    for (const planData of plans) {
-      await db.insert(plan).values(planData);
-      console.log(`✅ Created plan: ${planData.name}`);
-    }
 
     console.log('🎉 Database seeding completed successfully!');
   } catch (error) {
