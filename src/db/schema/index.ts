@@ -10,7 +10,6 @@ export * from './contacts';
 // Scheduled messages schema
 export * from './scheduled';
 
-
 // Webhooks schema
 export * from './webhooks';
 

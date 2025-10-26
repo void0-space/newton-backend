@@ -1,6 +1,6 @@
 {
-  "id": "95737fa7-6be0-471e-a977-9c90947bc3f0",
-  "prevId": "4cd187c3-9629-4fd7-b1c3-c71f016a0b06",
+  "id": "ef60b4a5-7949-4bc5-a2e4-58c0175033f6",
+  "prevId": "0f60e349-defb-4b2e-84c3-e940762b1171",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -1694,8 +1694,8 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.coupon": {
-      "name": "coupon",
+    "public.campaign_messages": {
+      "name": "campaign_messages",
       "schema": "",
       "columns": {
         "id": {
@@ -1704,539 +1704,57 @@
           "primaryKey": true,
           "notNull": true
         },
-        "code": {
-          "name": "code",
+        "campaign_id": {
+          "name": "campaign_id",
           "type": "text",
           "primaryKey": false,
           "notNull": true
         },
-        "name": {
-          "name": "name",
+        "recipient_number": {
+          "name": "recipient_number",
           "type": "text",
           "primaryKey": false,
           "notNull": true
         },
-        "description": {
-          "name": "description",
+        "message_id": {
+          "name": "message_id",
           "type": "text",
           "primaryKey": false,
           "notNull": false
-        },
-        "discount_type": {
-          "name": "discount_type",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "discount_value": {
-          "name": "discount_value",
-          "type": "numeric(10, 2)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "currency": {
-          "name": "currency",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "default": "'INR'"
-        },
-        "max_redemptions": {
-          "name": "max_redemptions",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "current_redemptions": {
-          "name": "current_redemptions",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "max_redemptions_per_customer": {
-          "name": "max_redemptions_per_customer",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "default": 1
-        },
-        "valid_from": {
-          "name": "valid_from",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "valid_until": {
-          "name": "valid_until",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "applicable_plans": {
-          "name": "applicable_plans",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "is_active": {
-          "name": "is_active",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "coupon_code_unique": {
-          "name": "coupon_code_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "code"
-          ]
-        }
-      },
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.coupon_usage": {
-      "name": "coupon_usage",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "coupon_id": {
-          "name": "coupon_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "organization_id": {
-          "name": "organization_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "subscription_id": {
-          "name": "subscription_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "discount_amount": {
-          "name": "discount_amount",
-          "type": "numeric(10, 2)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "coupon_usage_coupon_id_coupon_id_fk": {
-          "name": "coupon_usage_coupon_id_coupon_id_fk",
-          "tableFrom": "coupon_usage",
-          "tableTo": "coupon",
-          "columnsFrom": [
-            "coupon_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "coupon_usage_organization_id_organization_id_fk": {
-          "name": "coupon_usage_organization_id_organization_id_fk",
-          "tableFrom": "coupon_usage",
-          "tableTo": "organization",
-          "columnsFrom": [
-            "organization_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "coupon_usage_subscription_id_subscription_id_fk": {
-          "name": "coupon_usage_subscription_id_subscription_id_fk",
-          "tableFrom": "coupon_usage",
-          "tableTo": "subscription",
-          "columnsFrom": [
-            "subscription_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.invoice": {
-      "name": "invoice",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "organization_id": {
-          "name": "organization_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "subscription_id": {
-          "name": "subscription_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "payment_id": {
-          "name": "payment_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "invoice_number": {
-          "name": "invoice_number",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
         },
         "status": {
           "name": "status",
-          "type": "invoice_status",
-          "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'draft'"
-        },
-        "subtotal": {
-          "name": "subtotal",
-          "type": "numeric(10, 2)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "tax_amount": {
-          "name": "tax_amount",
-          "type": "numeric(10, 2)",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'0'"
-        },
-        "discount_amount": {
-          "name": "discount_amount",
-          "type": "numeric(10, 2)",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'0'"
-        },
-        "total": {
-          "name": "total",
-          "type": "numeric(10, 2)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "currency": {
-          "name": "currency",
           "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'INR'"
-        },
-        "cashfree_invoice_id": {
-          "name": "cashfree_invoice_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "razorpay_invoice_id": {
-          "name": "razorpay_invoice_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "amount": {
-          "name": "amount",
-          "type": "numeric(10, 2)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "issue_date": {
-          "name": "issue_date",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "due_date": {
-          "name": "due_date",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "paid_date": {
-          "name": "paid_date",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "paid_at": {
-          "name": "paid_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "billing_period_start": {
-          "name": "billing_period_start",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "billing_period_end": {
-          "name": "billing_period_end",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "customer_details": {
-          "name": "customer_details",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "line_items": {
-          "name": "line_items",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "notes": {
-          "name": "notes",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "internal_notes": {
-          "name": "internal_notes",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "metadata": {
-          "name": "metadata",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "invoice_organization_id_organization_id_fk": {
-          "name": "invoice_organization_id_organization_id_fk",
-          "tableFrom": "invoice",
-          "tableTo": "organization",
-          "columnsFrom": [
-            "organization_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "invoice_subscription_id_subscription_id_fk": {
-          "name": "invoice_subscription_id_subscription_id_fk",
-          "tableFrom": "invoice",
-          "tableTo": "subscription",
-          "columnsFrom": [
-            "subscription_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "invoice_payment_id_payment_id_fk": {
-          "name": "invoice_payment_id_payment_id_fk",
-          "tableFrom": "invoice",
-          "tableTo": "payment",
-          "columnsFrom": [
-            "payment_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "invoice_invoice_number_unique": {
-          "name": "invoice_invoice_number_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "invoice_number"
-          ]
-        }
-      },
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.payment": {
-      "name": "payment",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "organization_id": {
-          "name": "organization_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "subscription_id": {
-          "name": "subscription_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "invoice_id": {
-          "name": "invoice_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "cashfree_payment_id": {
-          "name": "cashfree_payment_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "cashfree_order_id": {
-          "name": "cashfree_order_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "razorpay_payment_id": {
-          "name": "razorpay_payment_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "razorpay_order_id": {
-          "name": "razorpay_order_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "payment_gateway": {
-          "name": "payment_gateway",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'razorpay'"
-        },
-        "amount": {
-          "name": "amount",
-          "type": "numeric(10, 2)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "currency": {
-          "name": "currency",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'INR'"
-        },
-        "status": {
-          "name": "status",
-          "type": "payment_status",
-          "typeSchema": "public",
           "primaryKey": false,
           "notNull": true,
           "default": "'pending'"
         },
-        "payment_method": {
-          "name": "payment_method",
+        "message_content": {
+          "name": "message_content",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "media_url": {
+          "name": "media_url",
           "type": "text",
           "primaryKey": false,
           "notNull": false
         },
-        "payment_method_details": {
-          "name": "payment_method_details",
-          "type": "text",
+        "sent_at": {
+          "name": "sent_at",
+          "type": "timestamp",
           "primaryKey": false,
           "notNull": false
         },
-        "method": {
-          "name": "method",
-          "type": "text",
+        "delivered_at": {
+          "name": "delivered_at",
+          "type": "timestamp",
           "primaryKey": false,
           "notNull": false
         },
-        "paid_at": {
-          "name": "paid_at",
+        "read_at": {
+          "name": "read_at",
           "type": "timestamp",
           "primaryKey": false,
           "notNull": false
@@ -2247,32 +1765,8 @@
           "primaryKey": false,
           "notNull": false
         },
-        "refunded_at": {
-          "name": "refunded_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "failure_reason": {
-          "name": "failure_reason",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "cashfree_response": {
-          "name": "cashfree_response",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "description": {
-          "name": "description",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "metadata": {
-          "name": "metadata",
+        "error_message": {
+          "name": "error_message",
           "type": "text",
           "primaryKey": false,
           "notNull": false
@@ -2294,83 +1788,257 @@
       },
       "indexes": {},
       "foreignKeys": {
-        "payment_organization_id_organization_id_fk": {
-          "name": "payment_organization_id_organization_id_fk",
-          "tableFrom": "payment",
-          "tableTo": "organization",
+        "campaign_messages_campaign_id_campaigns_id_fk": {
+          "name": "campaign_messages_campaign_id_campaigns_id_fk",
+          "tableFrom": "campaign_messages",
+          "tableTo": "campaigns",
           "columnsFrom": [
-            "organization_id"
+            "campaign_id"
           ],
           "columnsTo": [
             "id"
           ],
           "onDelete": "cascade",
           "onUpdate": "no action"
-        },
-        "payment_subscription_id_subscription_id_fk": {
-          "name": "payment_subscription_id_subscription_id_fk",
-          "tableFrom": "payment",
-          "tableTo": "subscription",
-          "columnsFrom": [
-            "subscription_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "payment_invoice_id_invoice_id_fk": {
-          "name": "payment_invoice_id_invoice_id_fk",
-          "tableFrom": "payment",
-          "tableTo": "invoice",
-          "columnsFrom": [
-            "invoice_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "payment_cashfree_payment_id_unique": {
-          "name": "payment_cashfree_payment_id_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "cashfree_payment_id"
-          ]
-        },
-        "payment_cashfree_order_id_unique": {
-          "name": "payment_cashfree_order_id_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "cashfree_order_id"
-          ]
-        },
-        "payment_razorpay_payment_id_unique": {
-          "name": "payment_razorpay_payment_id_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "razorpay_payment_id"
-          ]
-        },
-        "payment_razorpay_order_id_unique": {
-          "name": "payment_razorpay_order_id_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "razorpay_order_id"
-          ]
-        }
-      },
+      "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.payment_method": {
-      "name": "payment_method",
+    "public.campaign_recurrences": {
+      "name": "campaign_recurrences",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "campaign_id": {
+          "name": "campaign_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "scheduled_for": {
+          "name": "scheduled_for",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'pending'"
+        },
+        "executed_at": {
+          "name": "executed_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "completed_at": {
+          "name": "completed_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "messages_sent": {
+          "name": "messages_sent",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "default": 0
+        },
+        "messages_delivered": {
+          "name": "messages_delivered",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "default": 0
+        },
+        "messages_failed": {
+          "name": "messages_failed",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "default": 0
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "campaign_recurrences_campaign_id_campaigns_id_fk": {
+          "name": "campaign_recurrences_campaign_id_campaigns_id_fk",
+          "tableFrom": "campaign_recurrences",
+          "tableTo": "campaigns",
+          "columnsFrom": [
+            "campaign_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.campaign_stats": {
+      "name": "campaign_stats",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "campaign_id": {
+          "name": "campaign_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "total_recipients": {
+          "name": "total_recipients",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "messages_sent": {
+          "name": "messages_sent",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "messages_delivered": {
+          "name": "messages_delivered",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "messages_failed": {
+          "name": "messages_failed",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "messages_read": {
+          "name": "messages_read",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "messages_replied": {
+          "name": "messages_replied",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "delivery_rate": {
+          "name": "delivery_rate",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "default": 0
+        },
+        "read_rate": {
+          "name": "read_rate",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "default": 0
+        },
+        "reply_rate": {
+          "name": "reply_rate",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "default": 0
+        },
+        "cost_per_message": {
+          "name": "cost_per_message",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "default": 0
+        },
+        "total_cost": {
+          "name": "total_cost",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "default": 0
+        },
+        "last_updated": {
+          "name": "last_updated",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "campaign_stats_campaign_id_campaigns_id_fk": {
+          "name": "campaign_stats_campaign_id_campaigns_id_fk",
+          "tableFrom": "campaign_stats",
+          "tableTo": "campaigns",
+          "columnsFrom": [
+            "campaign_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.campaign_templates": {
+      "name": "campaign_templates",
       "schema": "",
       "columns": {
         "id": {
@@ -2385,86 +2053,84 @@
           "primaryKey": false,
           "notNull": true
         },
-        "cashfree_instrument_id": {
-          "name": "cashfree_instrument_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "razorpay_instrument_id": {
-          "name": "razorpay_instrument_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "payment_gateway": {
-          "name": "payment_gateway",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'razorpay'"
-        },
-        "type": {
-          "name": "type",
+        "name": {
+          "name": "name",
           "type": "text",
           "primaryKey": false,
           "notNull": true
         },
-        "is_default": {
-          "name": "is_default",
-          "type": "boolean",
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "category": {
+          "name": "category",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "message_type": {
+          "name": "message_type",
+          "type": "message_type",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "content": {
+          "name": "content",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "media_url": {
+          "name": "media_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "media_type": {
+          "name": "media_type",
+          "type": "media_type",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "usage_count": {
+          "name": "usage_count",
+          "type": "integer",
           "primaryKey": false,
           "notNull": true,
+          "default": 0
+        },
+        "estimated_engagement": {
+          "name": "estimated_engagement",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "default": 75
+        },
+        "is_popular": {
+          "name": "is_popular",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
           "default": false
-        },
-        "last4": {
-          "name": "last4",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "brand": {
-          "name": "brand",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "expiry_month": {
-          "name": "expiry_month",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "expiry_year": {
-          "name": "expiry_year",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "bank_name": {
-          "name": "bank_name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "account_type": {
-          "name": "account_type",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "vpa": {
-          "name": "vpa",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
         },
         "is_active": {
           "name": "is_active",
           "type": "boolean",
           "primaryKey": false,
-          "notNull": true,
+          "notNull": false,
           "default": true
+        },
+        "is_built_in": {
+          "name": "is_built_in",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
         },
         "created_at": {
           "name": "created_at",
@@ -2483,9 +2149,9 @@
       },
       "indexes": {},
       "foreignKeys": {
-        "payment_method_organization_id_organization_id_fk": {
-          "name": "payment_method_organization_id_organization_id_fk",
-          "tableFrom": "payment_method",
+        "campaign_templates_organization_id_organization_id_fk": {
+          "name": "campaign_templates_organization_id_organization_id_fk",
+          "tableFrom": "campaign_templates",
           "tableTo": "organization",
           "columnsFrom": [
             "organization_id"
@@ -2503,14 +2169,26 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.plan": {
-      "name": "plan",
+    "public.campaigns": {
+      "name": "campaigns",
       "schema": "",
       "columns": {
         "id": {
           "name": "id",
           "type": "text",
           "primaryKey": true,
+          "notNull": true
+        },
+        "organization_id": {
+          "name": "organization_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "whatsapp_session_id": {
+          "name": "whatsapp_session_id",
+          "type": "text",
+          "primaryKey": false,
           "notNull": true
         },
         "name": {
@@ -2525,349 +2203,221 @@
           "primaryKey": false,
           "notNull": false
         },
-        "plan_type": {
-          "name": "plan_type",
-          "type": "plan_type",
-          "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "price": {
-          "name": "price",
-          "type": "numeric(10, 2)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "currency": {
-          "name": "currency",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'INR'"
-        },
-        "billing_interval": {
-          "name": "billing_interval",
-          "type": "billing_interval",
-          "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "interval_count": {
-          "name": "interval_count",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 1
-        },
-        "trial_period_days": {
-          "name": "trial_period_days",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "default": 0
-        },
-        "max_whatsapp_accounts": {
-          "name": "max_whatsapp_accounts",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "max_messages_per_month": {
-          "name": "max_messages_per_month",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "max_auto_replies": {
-          "name": "max_auto_replies",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "max_contacts": {
-          "name": "max_contacts",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "analytics_retention_days": {
-          "name": "analytics_retention_days",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 30
-        },
-        "has_advanced_analytics": {
-          "name": "has_advanced_analytics",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
-        "has_api_access": {
-          "name": "has_api_access",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
-        "has_priority_support": {
-          "name": "has_priority_support",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
-        "has_custom_branding": {
-          "name": "has_custom_branding",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
-        "has_webhooks": {
-          "name": "has_webhooks",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
-        "has_team_management": {
-          "name": "has_team_management",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
-        "monthly_price": {
-          "name": "monthly_price",
-          "type": "numeric(10, 2)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "included_messages": {
-          "name": "included_messages",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "default": 0
-        },
-        "max_sessions": {
-          "name": "max_sessions",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "default": 1
-        },
-        "features": {
-          "name": "features",
-          "type": "text[]",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "razorpay_plan_id": {
-          "name": "razorpay_plan_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "cashfree_plan_id": {
-          "name": "cashfree_plan_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "is_active": {
-          "name": "is_active",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": true
-        },
-        "sort_order": {
-          "name": "sort_order",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "plan_razorpay_plan_id_unique": {
-          "name": "plan_razorpay_plan_id_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "razorpay_plan_id"
-          ]
-        },
-        "plan_cashfree_plan_id_unique": {
-          "name": "plan_cashfree_plan_id_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "cashfree_plan_id"
-          ]
-        }
-      },
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.subscription": {
-      "name": "subscription",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "organization_id": {
-          "name": "organization_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "plan_id": {
-          "name": "plan_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "cashfree_subscription_id": {
-          "name": "cashfree_subscription_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "cashfree_customer_id": {
-          "name": "cashfree_customer_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "razorpay_subscription_id": {
-          "name": "razorpay_subscription_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "razorpay_customer_id": {
-          "name": "razorpay_customer_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "payment_gateway": {
-          "name": "payment_gateway",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'razorpay'"
-        },
         "status": {
           "name": "status",
-          "type": "subscription_status",
+          "type": "campaign_status",
           "typeSchema": "public",
           "primaryKey": false,
           "notNull": true,
-          "default": "'incomplete'"
+          "default": "'draft'"
         },
-        "current_price": {
-          "name": "current_price",
-          "type": "numeric(10, 2)",
+        "priority": {
+          "name": "priority",
+          "type": "campaign_priority",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'normal'"
+        },
+        "message_type": {
+          "name": "message_type",
+          "type": "message_type",
+          "typeSchema": "public",
           "primaryKey": false,
           "notNull": true
         },
-        "currency": {
-          "name": "currency",
+        "content": {
+          "name": "content",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "media_url": {
+          "name": "media_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "media_type": {
+          "name": "media_type",
+          "type": "media_type",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "recipient_type": {
+          "name": "recipient_type",
+          "type": "recipient_type",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "recipients": {
+          "name": "recipients",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
+        },
+        "group_ids": {
+          "name": "group_ids",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "csv_data": {
+          "name": "csv_data",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "scheduling_type": {
+          "name": "scheduling_type",
+          "type": "scheduling_type",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'immediate'"
+        },
+        "scheduled_for": {
+          "name": "scheduled_for",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "timezone": {
+          "name": "timezone",
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'INR'"
+          "default": "'Asia/Kolkata'"
         },
-        "billing_interval": {
-          "name": "billing_interval",
-          "type": "billing_interval",
+        "recurring_frequency": {
+          "name": "recurring_frequency",
+          "type": "recurring_frequency",
           "typeSchema": "public",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
         },
-        "interval_count": {
-          "name": "interval_count",
+        "recurring_interval": {
+          "name": "recurring_interval",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "recurring_days_of_week": {
+          "name": "recurring_days_of_week",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "recurring_day_of_month": {
+          "name": "recurring_day_of_month",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "recurring_end_date": {
+          "name": "recurring_end_date",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "recurring_max_occurrences": {
+          "name": "recurring_max_occurrences",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "smart_scheduling_enabled": {
+          "name": "smart_scheduling_enabled",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "optimize_for_timezone": {
+          "name": "optimize_for_timezone",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "avoid_weekends": {
+          "name": "avoid_weekends",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "preferred_time": {
+          "name": "preferred_time",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "'10:00'"
+        },
+        "batch_size": {
+          "name": "batch_size",
           "type": "integer",
           "primaryKey": false,
           "notNull": true,
-          "default": 1
+          "default": 100
         },
-        "current_period_start": {
-          "name": "current_period_start",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "current_period_end": {
-          "name": "current_period_end",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "trial_start": {
-          "name": "trial_start",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "trial_end": {
-          "name": "trial_end",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "canceled_at": {
-          "name": "canceled_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "ended_at": {
-          "name": "ended_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "current_usage": {
-          "name": "current_usage",
+        "delay_between_messages": {
+          "name": "delay_between_messages",
           "type": "integer",
           "primaryKey": false,
           "notNull": true,
-          "default": 0
+          "default": 5
         },
-        "usage_reset_date": {
-          "name": "usage_reset_date",
+        "respect_business_hours": {
+          "name": "respect_business_hours",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": true
+        },
+        "business_hours_start": {
+          "name": "business_hours_start",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "'09:00'"
+        },
+        "business_hours_end": {
+          "name": "business_hours_end",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "'18:00'"
+        },
+        "started_at": {
+          "name": "started_at",
           "type": "timestamp",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
         },
-        "metadata": {
-          "name": "metadata",
+        "completed_at": {
+          "name": "completed_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "paused_at": {
+          "name": "paused_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "template_id": {
+          "name": "template_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "template_name": {
+          "name": "template_name",
           "type": "text",
           "primaryKey": false,
           "notNull": false
@@ -2889,9 +2439,9 @@
       },
       "indexes": {},
       "foreignKeys": {
-        "subscription_organization_id_organization_id_fk": {
-          "name": "subscription_organization_id_organization_id_fk",
-          "tableFrom": "subscription",
+        "campaigns_organization_id_organization_id_fk": {
+          "name": "campaigns_organization_id_organization_id_fk",
+          "tableFrom": "campaigns",
           "tableTo": "organization",
           "columnsFrom": [
             "organization_id"
@@ -2902,161 +2452,12 @@
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
-        "subscription_plan_id_plan_id_fk": {
-          "name": "subscription_plan_id_plan_id_fk",
-          "tableFrom": "subscription",
-          "tableTo": "plan",
+        "campaigns_whatsapp_session_id_whatsapp_session_id_fk": {
+          "name": "campaigns_whatsapp_session_id_whatsapp_session_id_fk",
+          "tableFrom": "campaigns",
+          "tableTo": "whatsapp_session",
           "columnsFrom": [
-            "plan_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "subscription_cashfree_subscription_id_unique": {
-          "name": "subscription_cashfree_subscription_id_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "cashfree_subscription_id"
-          ]
-        },
-        "subscription_razorpay_subscription_id_unique": {
-          "name": "subscription_razorpay_subscription_id_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "razorpay_subscription_id"
-          ]
-        }
-      },
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.usage": {
-      "name": "usage",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "organization_id": {
-          "name": "organization_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "subscription_id": {
-          "name": "subscription_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "period": {
-          "name": "period",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "messages_sent": {
-          "name": "messages_sent",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "messages_received": {
-          "name": "messages_received",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "media_sent": {
-          "name": "media_sent",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "storage_used": {
-          "name": "storage_used",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "api_calls": {
-          "name": "api_calls",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "whatsapp_accounts_used": {
-          "name": "whatsapp_accounts_used",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "auto_replies_triggered": {
-          "name": "auto_replies_triggered",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "contacts_managed": {
-          "name": "contacts_managed",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "usage_organization_id_organization_id_fk": {
-          "name": "usage_organization_id_organization_id_fk",
-          "tableFrom": "usage",
-          "tableTo": "organization",
-          "columnsFrom": [
-            "organization_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "usage_subscription_id_subscription_id_fk": {
-          "name": "usage_subscription_id_subscription_id_fk",
-          "tableFrom": "usage",
-          "tableTo": "subscription",
-          "columnsFrom": [
-            "subscription_id"
+            "whatsapp_session_id"
           ],
           "columnsTo": [
             "id"
@@ -3195,6 +2596,19 @@
           "type": "text",
           "primaryKey": false,
           "notNull": false
+        },
+        "whatsapp_group_id": {
+          "name": "whatsapp_group_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "participant_count": {
+          "name": "participant_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "default": 0
         },
         "created_at": {
           "name": "created_at",
@@ -3349,8 +2763,28 @@
           "primaryKey": false,
           "notNull": false
         },
+        "tus_id": {
+          "name": "tus_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "upload_completed": {
+          "name": "upload_completed",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
         "created_at": {
           "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
           "type": "timestamp",
           "primaryKey": false,
           "notNull": true,
@@ -4131,61 +3565,72 @@
     }
   },
   "enums": {
-    "public.billing_interval": {
-      "name": "billing_interval",
+    "public.campaign_priority": {
+      "name": "campaign_priority",
       "schema": "public",
       "values": [
-        "monthly",
-        "quarterly",
-        "yearly"
+        "low",
+        "normal",
+        "high"
       ]
     },
-    "public.invoice_status": {
-      "name": "invoice_status",
+    "public.campaign_status": {
+      "name": "campaign_status",
       "schema": "public",
       "values": [
         "draft",
-        "pending",
-        "paid",
-        "overdue",
-        "canceled",
-        "refunded"
-      ]
-    },
-    "public.payment_status": {
-      "name": "payment_status",
-      "schema": "public",
-      "values": [
-        "pending",
-        "success",
+        "scheduled",
+        "sending",
+        "completed",
         "failed",
-        "canceled",
-        "refunded",
-        "partial_refund"
-      ]
-    },
-    "public.plan_type": {
-      "name": "plan_type",
-      "schema": "public",
-      "values": [
-        "free",
-        "starter",
-        "professional",
-        "enterprise"
-      ]
-    },
-    "public.subscription_status": {
-      "name": "subscription_status",
-      "schema": "public",
-      "values": [
-        "active",
-        "past_due",
-        "canceled",
-        "unpaid",
-        "incomplete",
-        "incomplete_expired",
-        "trialing",
         "paused"
+      ]
+    },
+    "public.media_type": {
+      "name": "media_type",
+      "schema": "public",
+      "values": [
+        "image",
+        "video",
+        "audio",
+        "document"
+      ]
+    },
+    "public.message_type": {
+      "name": "message_type",
+      "schema": "public",
+      "values": [
+        "text",
+        "media",
+        "template"
+      ]
+    },
+    "public.recipient_type": {
+      "name": "recipient_type",
+      "schema": "public",
+      "values": [
+        "all",
+        "groups",
+        "individual",
+        "csv_upload"
+      ]
+    },
+    "public.recurring_frequency": {
+      "name": "recurring_frequency",
+      "schema": "public",
+      "values": [
+        "daily",
+        "weekly",
+        "monthly"
+      ]
+    },
+    "public.scheduling_type": {
+      "name": "scheduling_type",
+      "schema": "public",
+      "values": [
+        "immediate",
+        "scheduled",
+        "recurring"
       ]
     }
   },

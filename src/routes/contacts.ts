@@ -10,6 +10,7 @@ import {
 } from '../controllers/contactsController';
 import { auth } from '../lib/auth';
 import { convertHeaders } from '../utils/header';
+// Removed complex paywall middleware - using client-side checks instead
 
 const contactsRoutes: FastifyPluginAsync = async fastify => {
   // Session-based authentication middleware

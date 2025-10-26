@@ -8,7 +8,6 @@ Multi-tenant WhatsApp API service backend built with Fastify, TypeScript, and be
 - WhatsApp integration using Baileys
 - API key management and authentication
 - Message persistence and media handling
-- Billing integration with Razorpay
 - Rate limiting and quota management
 - Comprehensive testing and monitoring
 
@@ -19,7 +18,7 @@ Multi-tenant WhatsApp API service backend built with Fastify, TypeScript, and be
 - **Auth**: better-auth with organization, admin, and API key plugins
 - **Cache**: Redis
 - **Storage**: AWS S3 compatible (MinIO for development)
-- **Payments**: Razorpay
+- **Payments**: Polar.sh with better-auth integration
 - **Testing**: Vitest
 - **Monitoring**: Sentry, Prometheus metrics
 
@@ -144,6 +143,18 @@ docker-compose up
 - `GET /api/v1/api-keys` - List API keys
 - `DELETE /api/v1/api-keys/:id` - Revoke API key
 
+### Webhooks
+- `GET /api/v1/webhooks` - List all webhooks
+- `POST /api/v1/webhooks` - Create webhook
+- `GET /api/v1/webhooks/:id` - Get webhook details
+- `PUT /api/v1/webhooks/:id` - Update webhook
+- `DELETE /api/v1/webhooks/:id` - Delete webhook
+- `POST /api/v1/webhooks/:id/test` - Test webhook
+- `GET /api/v1/webhooks/:id/deliveries` - Get webhook delivery history
+- `GET /api/v1/webhooks/events` - List available events
+
+For detailed webhook documentation, see [Webhook Documentation](../docs/api/webhooks.md)
+
 ## Environment Variables
 
 See `.env.example` for all required environment variables.
@@ -153,7 +164,9 @@ Key variables:
 - `REDIS_URL` - Redis connection string
 - `BETTER_AUTH_SECRET` - Secret for better-auth
 - `ENCRYPTION_KEY` - Key for encrypting sensitive data
-- `RZP_KEY_ID`, `RZP_KEY_SECRET` - Razorpay credentials
+- `POLAR_ACCESS_TOKEN` - Polar.sh organization access token
+- `POLAR_WEBHOOK_SECRET` - Polar webhook secret for verification
+- `POLAR_ENVIRONMENT` - 'sandbox' for development, 'production' for live
 
 ## Security
 

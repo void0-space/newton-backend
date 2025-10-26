@@ -14,6 +14,7 @@ import {
 import { sendMessage } from '../controllers/apiController';
 import { auth } from '../lib/auth';
 import { convertHeaders } from '../utils/header';
+// Removed complex paywall middleware - using client-side checks instead
 import { whatsappSession } from '../db/schema/whatsapp';
 import { eq, and } from 'drizzle-orm';
 import { db } from '../db/drizzle';
@@ -106,6 +107,53 @@ const whatsappRoutes: FastifyPluginAsync = async fastify => {
     updateSessionSettings
   );
   fastify.get('/connection-status/:sessionId', { preHandler: sessionAuthMiddleware }, getSessionQR);
+
+  // Group syncing route
+  fastify.post('/accounts/:id/sync-groups', { preHandler: sessionAuthMiddleware }, async (request: any, reply) => {
+    try {
+      const organizationId = request.organization.id;
+      const { id: sessionId } = request.params;
+
+      // Verify the session belongs to this organization
+      const [session] = await db
+        .select()
+        .from(whatsappSession)
+        .where(
+          and(
+            eq(whatsappSession.id, sessionId),
+            eq(whatsappSession.organizationId, organizationId)
+          )
+        )
+        .limit(1);
+
+      if (!session) {
+        return reply.status(404).send({ error: 'Session not found' });
+      }
+
+      // Call the BaileysManager to fetch and sync groups
+      const result = await fastify.baileys.fetchAndSyncGroups(sessionId, organizationId);
+
+      if (result.error) {
+        return reply.status(400).send({
+          error: 'Failed to sync groups',
+          message: result.error,
+          synced: result.synced,
+        });
+      }
+
+      return reply.send({
+        success: true,
+        message: `Successfully synced ${result.synced} groups`,
+        synced: result.synced,
+      });
+    } catch (error) {
+      fastify.log.error('Error syncing groups:', error);
+      return reply.status(500).send({
+        error: 'Internal server error',
+        message: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  });
 
   // Real-time status updates via Server-Sent Events
   fastify.get(

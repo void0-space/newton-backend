@@ -146,8 +146,8 @@ export async function getContacts(request: FastifyRequest, reply: FastifyReply) 
       .select()
       .from(contact)
       .where(and(...whereConditions))
-      .limit(limit)
-      .offset(offset)
+      // .limit(limit)
+      // .offset(offset)
       .orderBy(contact.createdAt);
 
     // Get total count for pagination

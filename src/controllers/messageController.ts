@@ -97,7 +97,8 @@ export async function sendTextMessage(request: FastifyRequest, reply: FastifyRep
       })
       .returning();
 
-    // Track usage
+
+    // Track usage (legacy)
     if (request.trackUsage) {
       await request.trackUsage('messages_sent');
     }
@@ -256,7 +257,8 @@ export async function sendMediaMessage(request: FastifyRequest, reply: FastifyRe
       })
       .returning();
 
-    // Track usage
+
+    // Track usage (legacy)
     if (request.trackUsage) {
       await request.trackUsage('messages_sent');
       await request.trackUsage('media_sent');

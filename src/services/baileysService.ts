@@ -1,12 +1,14 @@
-import makeWASocket, {
+import {
+  default as makeWASocket,
   DisconnectReason,
   useMultiFileAuthState,
-  WASocket,
-  WAMessage,
-  ConnectionState,
   Browsers,
+  ConnectionState,
   Contact,
   GroupMetadata,
+  WAMessage,
+  proto,
+  WASocket,
 } from '@whiskeysockets/baileys';
 import QRCode from 'qrcode';
 import { FastifyInstance } from 'fastify';
@@ -83,16 +85,10 @@ export class BaileysManager {
       // Create WhatsApp socket
       const socket = makeWASocket({
         auth: state,
-        printQRInTerminal: false,
-        logger: this.fastify.log.child({ sessionId }),
-        markOnlineOnConnect: true,
-        generateHighQualityLinkPreview: true,
-        syncFullHistory: true,
-        qrTimeout: 120000, // 2 minutes QR timeout
-        connectTimeoutMs: 120000, // 2 minutes connect timeout
-        keepAliveIntervalMs: 30000, // Keep alive every 30 seconds
-        retryRequestDelayMs: 2000, // 2 second retry delay
-        browser: ['Newton', 'Desktop', '1.0.0'],
+        logger: this.fastify.log,
+        browser: Browsers.macOS('Desktop'),
+        // V7 simplified config - removed legacy options
+        defaultQueryTimeoutMs: undefined,
       });
 
       session.socket = socket;
@@ -102,43 +98,54 @@ export class BaileysManager {
       // Handle connection events with proper context
       const sessionContext = { sessionId, organizationId, sessionKey };
 
-      socket.ev.on('connection.update', async update => {
-        await this.handleConnectionUpdate(sessionContext, update);
+      socket.ev.on('connection.update', update => {
+        // Fire and forget - don't wait for completion
+        this.handleConnectionUpdate(sessionContext, update).catch(err =>
+          this.fastify.log.error('Error in handleConnectionUpdate:', err)
+        );
       });
 
       // Handle credentials update
       socket.ev.on('creds.update', saveCreds);
 
       // Handle messages
-      socket.ev.on('messages.upsert', async messageUpdate => {
+      socket.ev.on('messages.upsert', messageUpdate => {
         this.fastify.log.info(
           `🚀 messages.upsert event fired for session ${sessionId}!: ${JSON.stringify(messageUpdate.messages)}`
         );
-        await this.handleMessages(sessionContext, messageUpdate);
+        this.handleMessages(sessionContext, messageUpdate).catch(err =>
+          this.fastify.log.error('Error in handleMessages:', err)
+        );
       });
 
       // Handle message status updates
-      socket.ev.on('messages.update', async updates => {
+      socket.ev.on('messages.update', updates => {
         this.fastify.log.info(
           `🔄 messages.update event fired for session ${sessionId}: ${JSON.stringify(updates)}`
         );
-        await this.handleMessageUpdates(sessionContext, updates);
+        this.handleMessageUpdates(sessionContext, updates).catch(err =>
+          this.fastify.log.error('Error in handleMessageUpdates:', err)
+        );
       });
 
       // Handle contacts sync
-      socket.ev.on('contacts.upsert', async contacts => {
+      socket.ev.on('contacts.upsert', contacts => {
         this.fastify.log.info(
           `👥 contacts.upsert event fired for session ${sessionId}: ${JSON.stringify(contacts)}`
         );
-        await this.handleContactsUpsert(sessionContext, contacts);
+        this.handleContactsUpsert(sessionContext, contacts).catch(err =>
+          this.fastify.log.error('Error in handleContactsUpsert:', err)
+        );
       });
 
       // Handle groups sync
-      socket.ev.on('groups.upsert', async groups => {
+      socket.ev.on('groups.upsert', groups => {
         this.fastify.log.info(
           `👫 groups.upsert event fired for session ${sessionId}: ${JSON.stringify(groups)}`
         );
-        await this.handleGroupsUpsert(sessionContext, groups);
+        this.handleGroupsUpsert(sessionContext, groups).catch(err =>
+          this.fastify.log.error('Error in handleGroupsUpsert:', err)
+        );
       });
 
       // Save initial session to database
@@ -372,6 +379,42 @@ export class BaileysManager {
     return result;
   }
 
+  async fetchAndSyncGroups(sessionId: string, organizationId: string): Promise<{ synced: number; error?: string }> {
+    try {
+      const sessionKey = `${organizationId}:${sessionId}`;
+      const session = this.sessions.get(sessionKey);
+
+      if (!session || !session.socket) {
+        return { synced: 0, error: 'Session not found or not connected' };
+      }
+
+      this.fastify.log.info(`Fetching groups for session ${sessionId}...`);
+
+      // Get all groups the user is participating in
+      const groups = await session.socket.groupFetchAllParticipating();
+
+      if (!groups || Object.keys(groups).length === 0) {
+        this.fastify.log.info(`No groups found for session ${sessionId}`);
+        return { synced: 0 };
+      }
+
+      // Convert groups object to array and process
+      const groupArray = Object.values(groups);
+      this.fastify.log.info(`Found ${groupArray.length} groups, syncing...`);
+
+      await this.handleGroupsUpsert(
+        { sessionId, organizationId, sessionKey },
+        groupArray as GroupMetadata[]
+      );
+
+      return { synced: groupArray.length };
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      this.fastify.log.error(`Error fetching groups for session ${sessionId}:`, error);
+      return { synced: 0, error: errorMessage };
+    }
+  }
+
   private async handleConnectionUpdate(
     sessionContext: { sessionId: string; organizationId: string; sessionKey: string },
     update: Partial<ConnectionState>
@@ -396,29 +439,30 @@ export class BaileysManager {
 
     const { connection, lastDisconnect, qr } = update;
 
+    // Log full update structure for debugging (V7)
     this.fastify.log.info(
-      `Session ${sessionId} connection update: ${JSON.stringify({
-        connection,
-        lastDisconnect: lastDisconnect?.error?.cause,
-        hasQR: !!qr,
-      })}`
+      `Session ${sessionId} full update object - keys: ${Object.keys(update).join(', ')}, connection: ${connection}, hasQR: ${!!qr}`
     );
 
     if (qr) {
       this.fastify.log.info(`QR code generated for session ${sessionId}`);
-      // Generate QR code
-      const qrCodeUrl = await QRCode.toDataURL(qr);
-      session.qrCode = qrCodeUrl;
-      session.status = 'qr_required';
+      try {
+        // Generate QR code
+        const qrCodeUrl = await QRCode.toDataURL(qr);
+        session.qrCode = qrCodeUrl;
+        session.status = 'qr_required';
 
-      this.fastify.log.info(`Session ${sessionId} status set to qr_required`);
+        this.fastify.log.info(`Session ${sessionId} status set to qr_required`);
 
-      await this.saveSessionToDb(session);
-      this.fastify.log.info(`Session ${sessionId} saved to database with QR code`);
+        await this.saveSessionToDb(session);
+        this.fastify.log.info(`Session ${sessionId} saved to database with QR code`);
 
-      // Publish QR event to Redis
-      await this.publishEvent(sessionId, 'qr_generated', { qrCode: qrCodeUrl });
-      this.fastify.log.info(`Published qr_generated event for session ${sessionId}`);
+        // Publish QR event to Redis
+        await this.publishEvent(sessionId, 'qr_generated', { qrCode: qrCodeUrl });
+        this.fastify.log.info(`Published qr_generated event for session ${sessionId}`);
+      } catch (err) {
+        this.fastify.log.error(`Error generating QR code for session ${sessionId}:`, err);
+      }
     }
 
     if (connection === 'close') {
@@ -602,6 +646,43 @@ export class BaileysManager {
       });
 
       this.fastify.log.info(`Published connected event for session ${sessionId}`);
+
+      // Fetch and sync WhatsApp groups after successful connection
+      try {
+        this.fastify.log.info(`Fetching WhatsApp groups for newly connected session ${sessionId}...`);
+        const groupSyncResult = await this.fetchAndSyncGroups(sessionId, organizationId);
+        this.fastify.log.info(
+          `Successfully synced ${groupSyncResult.synced} groups for session ${sessionId}`,
+          groupSyncResult
+        );
+      } catch (groupSyncError) {
+        this.fastify.log.warn(
+          `Failed to sync groups for session ${sessionId}:`,
+          groupSyncError
+        );
+        // Don't fail the connection if group sync fails
+      }
+
+      // Ingest account.created event for usage tracking
+      try {
+        this.fastify.log.info(
+          `🎯 Attempting to ingest account.created event for session ${sessionId} and organization ${session.organizationId}`
+        );
+        await this.ingestAccountCreatedEvent(session.organizationId, {
+          sessionId,
+          phoneNumber: session.phoneNumber,
+          profileName: session.profileName,
+          accountType: 'whatsapp',
+        });
+        this.fastify.log.info(
+          `✅ Successfully ingested account.created event for session ${sessionId}`
+        );
+      } catch (ingestError) {
+        this.fastify.log.error(
+          `❌ Failed to ingest account.created event for session ${sessionId}:`,
+          ingestError
+        );
+      }
     }
   }
 
@@ -630,32 +711,41 @@ export class BaileysManager {
 
       const socket = makeWASocket({
         auth: state,
-        printQRInTerminal: false,
-        logger: this.fastify.log.child({ sessionId }),
-        markOnlineOnConnect: true,
-        qrTimeout: 120000, // 2 minutes QR timeout
-        connectTimeoutMs: 120000, // 2 minutes connect timeout
-        keepAliveIntervalMs: 30000, // Keep alive every 30 seconds
-        retryRequestDelayMs: 2000, // 2 second retry delay
+        logger: this.fastify.log,
+        browser: Browsers.macOS('Desktop'),
+        // V7 simplified config
+        defaultQueryTimeoutMs: undefined,
       });
 
       session.socket = socket;
 
       // Re-register event handlers
-      socket.ev.on('connection.update', update =>
-        this.handleConnectionUpdate(sessionContext, update)
-      );
+      socket.ev.on('connection.update', update => {
+        this.handleConnectionUpdate(sessionContext, update).catch(err =>
+          this.fastify.log.error('Error in handleConnectionUpdate:', err)
+        );
+      });
       socket.ev.on('creds.update', saveCreds);
       socket.ev.on('messages.upsert', messageUpdate =>
-        this.handleMessages(sessionContext, messageUpdate)
+        this.handleMessages(sessionContext, messageUpdate).catch(err =>
+          this.fastify.log.error('Error in handleMessages:', err)
+        )
       );
       socket.ev.on('messages.update', updates =>
-        this.handleMessageUpdates(sessionContext, updates)
+        this.handleMessageUpdates(sessionContext, updates).catch(err =>
+          this.fastify.log.error('Error in handleMessageUpdates:', err)
+        )
       );
       socket.ev.on('contacts.upsert', contacts =>
-        this.handleContactsUpsert(sessionContext, contacts)
+        this.handleContactsUpsert(sessionContext, contacts).catch(err =>
+          this.fastify.log.error('Error in handleContactsUpsert:', err)
+        )
       );
-      socket.ev.on('groups.upsert', groups => this.handleGroupsUpsert(sessionContext, groups));
+      socket.ev.on('groups.upsert', groups =>
+        this.handleGroupsUpsert(sessionContext, groups).catch(err =>
+          this.fastify.log.error('Error in handleGroupsUpsert:', err)
+        )
+      );
     } catch (error) {
       this.fastify.log.error(`Failed to recreate socket for session ${sessionId}:`, error);
       session.status = 'disconnected';
@@ -834,11 +924,16 @@ export class BaileysManager {
 
           if (existingContact) {
             // Update existing contact
+            const currentTags = existingContact.tags || [];
+            const newTags = currentTags.includes('whatsapp-sync')
+              ? currentTags
+              : [...currentTags, 'whatsapp-sync'];
+
             await db
               .update(contact)
               .set({
                 name: waContact.name || waContact.notify || waContact.verifiedName || '-',
-                tags: [...(existingContact.tags || []), 'whatsapp-sync'],
+                tags: newTags,
                 updatedAt: new Date(),
               })
               .where(eq(contact.id, existingContact.id));
@@ -881,7 +976,7 @@ export class BaileysManager {
 
     try {
       this.fastify.log.info(`Processing ${groups.length} groups from WhatsApp`);
-
+      this.fastify.log.info(groups, `Groups: `);
       // Import schemas
       const { contact, contactGroup } = await import('../db/schema');
       const { createId } = await import('@paralleldrive/cuid2');
@@ -959,13 +1054,20 @@ export class BaileysManager {
                 if (existingContact) {
                   // Add group to existing contact's groups
                   const currentGroups = existingContact.groups || [];
+                  const currentTags = existingContact.tags || [];
                   const groupName = waGroup.subject || 'Unknown Group';
-                  if (!currentGroups.includes(groupName)) {
+                  const groupChanged = !currentGroups.includes(groupName);
+                  const needsWhatsappGroupTag = !currentTags.includes('whatsapp-group');
+
+                  if (groupChanged || needsWhatsappGroupTag) {
+                    const newGroups = groupChanged ? [...currentGroups, groupName] : currentGroups;
+                    const newTags = needsWhatsappGroupTag ? [...currentTags, 'whatsapp-group'] : currentTags;
+
                     await db
                       .update(contact)
                       .set({
-                        groups: [...currentGroups, groupName],
-                        tags: [...(existingContact.tags || []), 'whatsapp-group'],
+                        groups: newGroups,
+                        tags: newTags,
                         updatedAt: new Date(),
                       })
                       .where(eq(contact.id, existingContact.id));
@@ -1377,6 +1479,21 @@ export class BaileysManager {
       // Publish deletion event
       await this.publishEvent(sessionId, 'deleted', { organizationId });
 
+      // Ingest account.deleted event for usage tracking
+      try {
+        await this.ingestAccountDeletedEvent(organizationId, {
+          sessionId,
+          accountType: 'whatsapp',
+          deletedAt: new Date().toISOString(),
+        });
+        this.fastify.log.info(`Ingested account.deleted event for session ${sessionId}`);
+      } catch (ingestError) {
+        this.fastify.log.warn(
+          `Failed to ingest account.deleted event for session ${sessionId}:`,
+          ingestError
+        );
+      }
+
       this.fastify.log.info(
         `Session ${sessionId} deleted successfully for organization ${organizationId}`
       );
@@ -1413,5 +1530,92 @@ export class BaileysManager {
     }
 
     this.sessions.clear();
+  }
+
+  /**
+   * Ingest account.created event for usage tracking
+   */
+  private async ingestAccountCreatedEvent(organizationId: string, eventData: any) {
+    try {
+      this.fastify.log.info(
+        `🔄 Starting ingestion for organization ${organizationId} with data:`,
+        eventData
+      );
+
+      // Use the internal ingestion controller directly instead of HTTP
+      const { ingestEvent } = await import('../controllers/benefitsIngestionController');
+
+      const mockRequest = {
+        body: {
+          customerId: organizationId,
+          eventName: 'account.created',
+          eventData,
+          timestamp: new Date().toISOString(),
+        },
+      } as any;
+
+      this.fastify.log.info(`📤 Calling ingestEvent with request:`, mockRequest.body);
+
+      const mockReply = {
+        status: (code: number) => ({
+          send: (data: any) => {
+            this.fastify.log.info(`📥 Ingestion reply with status ${code}:`, data);
+            if (code !== 200) {
+              throw new Error(`Ingestion failed: ${data.error || 'Unknown error'}`);
+            }
+            return data;
+          },
+        }),
+        send: (data: any) => {
+          this.fastify.log.info(`📥 Ingestion reply (success):`, data);
+          return data;
+        },
+      } as any;
+
+      const result = await ingestEvent(mockRequest, mockReply);
+      this.fastify.log.info(`✅ Successfully ingested account.created event:`, result);
+      return result;
+    } catch (error) {
+      this.fastify.log.error(`❌ Failed to ingest account.created event:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Remove ingestion for account deletion
+   */
+  private async ingestAccountDeletedEvent(organizationId: string, eventData: any) {
+    try {
+      // Use the internal ingestion controller directly instead of HTTP
+      const { ingestEvent } = await import('../controllers/benefitsIngestionController');
+
+      const mockRequest = {
+        body: {
+          customerId: organizationId,
+          eventName: 'account.deleted',
+          eventData,
+          timestamp: new Date().toISOString(),
+        },
+      } as any;
+
+      const mockReply = {
+        status: (code: number) => ({
+          send: (data: any) => {
+            if (code !== 200) {
+              throw new Error(`Ingestion failed: ${data.error || 'Unknown error'}`);
+            }
+            return data;
+          },
+        }),
+        send: (data: any) => data,
+      } as any;
+
+      const result = await ingestEvent(mockRequest, mockReply);
+      this.fastify.log.info(`Successfully ingested account.deleted event:`, result);
+      return result;
+    } catch (error) {
+      this.fastify.log.error(`Failed to ingest account.deleted event:`, error);
+      throw error;
+    }
   }
 }

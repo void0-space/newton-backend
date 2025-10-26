@@ -72,14 +72,29 @@ export async function createWhatsAppSession(request: FastifyRequest, reply: Fast
     const sessionId = createId();
     const session = await request.server.baileys.createSession(sessionId, organizationId);
 
-    // Wait a bit for QR code generation
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    // Poll for QR code generation (up to 10 seconds)
+    let updatedSession = null;
+    let qrCodeReady = false;
+    let attempts = 0;
+    const maxAttempts = 20; // 10 seconds total (20 * 500ms)
 
-    // Get updated session with QR code
-    const updatedSession = await request.server.baileys.getSession(sessionId, organizationId);
+    while (!qrCodeReady && attempts < maxAttempts) {
+      await new Promise(resolve => setTimeout(resolve, 500));
+      updatedSession = await request.server.baileys.getSession(sessionId, organizationId);
+
+      if (updatedSession?.qrCode) {
+        qrCodeReady = true;
+        request.log.info(`QR code ready after ${(attempts + 1) * 500}ms`);
+      }
+      attempts++;
+    }
+
+    if (!qrCodeReady) {
+      request.log.warn(`QR code not ready after ${maxAttempts * 500}ms, returning anyway`);
+    }
 
     return reply.status(201).send({
-      qrCode: updatedSession?.qrCode || session.qrCode,
+      qrCode: updatedSession?.qrCode || session.qrCode || '',
       sessionId: session.id,
       status: updatedSession?.status || session.status,
     });

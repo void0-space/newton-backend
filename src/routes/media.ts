@@ -1,42 +1,37 @@
 import { FastifyPluginAsync } from 'fastify';
 import {
-  requestUploadUrl,
-  directUpload,
-  getMedia,
-  downloadMedia,
-  deleteMedia,
-  listMedia,
+  getMediaList,
+  getMediaItem,
+  deleteMediaItem,
+  updateMediaMetadata,
+  getMediaStats,
 } from '../controllers/mediaController';
 
-const mediaRoutes: FastifyPluginAsync = async (fastify) => {
-  // All routes require API key and organization
-  fastify.addHook('preHandler', async (request, reply) => {
-    if (!request.apiKey) {
-      return reply.status(401).send({
-        error: 'API key required',
-        code: 'API_KEY_REQUIRED',
-      });
-    }
-
-    if (!request.organization) {
-      return reply.status(400).send({
-        error: 'Organization context required',
-        code: 'ORGANIZATION_REQUIRED',
-      });
-    }
+const mediaRoutes: FastifyPluginAsync = async (fastify, options) => {
+  // Get all media for organization
+  fastify.get('/', {
+    handler: getMediaList,
   });
 
-  // Upload endpoints
-  fastify.post('/upload/request', requestUploadUrl);
-  fastify.post('/upload/direct', {
-    preHandler: fastify.multipart,
-  }, directUpload);
+  // Get media stats
+  fastify.get('/stats', {
+    handler: getMediaStats,
+  });
 
-  // Media management endpoints
-  fastify.get('/', listMedia);
-  fastify.get('/:id', getMedia);
-  fastify.get('/:id/download', downloadMedia);
-  fastify.delete('/:id', deleteMedia);
+  // Get specific media item
+  fastify.get('/:id', {
+    handler: getMediaItem,
+  });
+
+  // Update media metadata
+  fastify.patch('/:id', {
+    handler: updateMediaMetadata,
+  });
+
+  // Delete media item
+  fastify.delete('/:id', {
+    handler: deleteMediaItem,
+  });
 };
 
 export default mediaRoutes;

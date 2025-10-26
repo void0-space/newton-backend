@@ -69,7 +69,10 @@ export const media = pgTable('media', {
   originalName: text('original_name'),
   mimeType: text('mime_type').notNull(),
   size: integer('size').notNull(),
-  url: text('url').notNull(), // S3 URL
+  url: text('url').notNull(), // R2 URL
   thumbnailUrl: text('thumbnail_url'),
+  tusId: text('tus_id'), // TUS upload ID for resumable uploads
+  uploadCompleted: boolean('upload_completed').default(false),
   createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
 });

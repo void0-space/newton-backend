@@ -10,6 +10,7 @@ import dotenv from 'dotenv';
 // import betterAuthPlugin from './plugins/betterAuth';
 import apikeyMiddleware from './plugins/apikeyMiddleware';
 import analyticsMiddleware from './plugins/analyticsMiddleware';
+import tusPlugin from './plugins/tus';
 
 // Import routes
 import authRoutes from './routes/auth';
@@ -18,10 +19,12 @@ import whatsappRoutes from './routes/whatsapp';
 import messageRoutes from './routes/messages';
 import mediaRoutes from './routes/media';
 import contactsRoutes from './routes/contacts';
+import groupRoutes from './routes/groups';
 import scheduledRoutes from './routes/scheduled';
 import analyticsRoutes from './routes/analytics';
 import autoReplyRoutes from './routes/autoReply';
 import campaignRoutes from './routes/campaigns';
+import webhookRoutes from './routes/webhooks.js';
 
 // Import plugins
 import baileysPlugin from './plugins/baileys';
@@ -58,6 +61,9 @@ async function start() {
       dotenv: true,
     });
 
+    // Register TUS plugin FIRST before any CORS plugins
+    await fastify.register(tusPlugin);
+
     // Register core plugins
     await fastify.register(helmet, {
       contentSecurityPolicy: {
@@ -71,20 +77,51 @@ async function start() {
     });
 
     await fastify.register(cors, {
-      origin: [
-        'http://localhost:3000',
-        'http://localhost:3001',
-        'https://api.newton.ink',
-        'https://www.newton.ink',
-        'https://newton.ink',
-      ], // Admin & Web portals
-      methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+      origin: (origin, callback) => {
+        // Always allow these origins
+        const allowedOrigins = [
+          'http://localhost:3000',
+          'http://localhost:3001',
+          'https://api.newton.ink',
+          'https://www.newton.ink',
+          'https://newton.ink',
+        ];
+
+        if (!origin || allowedOrigins.includes(origin)) {
+          callback(null, true);
+        } else {
+          callback(new Error('Not allowed by CORS'), false);
+        }
+      },
+      methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH', 'HEAD'],
       allowedHeaders: [
         'Content-Type',
         'Authorization',
         'X-Requested-With',
         'X-Api-Key',
         'X-Organization-Id',
+        // TUS headers for resumable uploads
+        'tus-resumable',
+        'tus-version',
+        'tus-max-size',
+        'tus-extension',
+        'upload-length',
+        'upload-offset',
+        'upload-metadata',
+        'upload-defer-length',
+        'upload-concat',
+        'upload-checksum',
+      ],
+      exposedHeaders: [
+        // TUS headers for resumable uploads
+        'tus-resumable',
+        'tus-version',
+        'tus-max-size',
+        'tus-extension',
+        'upload-length',
+        'upload-offset',
+        'upload-metadata',
+        'location',
       ],
       credentials: true,
     });
@@ -282,10 +319,12 @@ async function start() {
     await fastify.register(messageRoutes, { prefix: '/api/v1/messages' });
     await fastify.register(mediaRoutes, { prefix: '/api/v1/media' });
     await fastify.register(contactsRoutes, { prefix: '/api/v1/contacts' });
+    await fastify.register(groupRoutes, { prefix: '/api/v1/groups' });
     await fastify.register(scheduledRoutes, { prefix: '/api/v1/scheduled' });
     await fastify.register(analyticsRoutes, { prefix: '/api/v1/analytics' });
     await fastify.register(autoReplyRoutes, { prefix: '/api/v1' });
     await fastify.register(campaignRoutes, { prefix: '/api/v1/campaigns' });
+    await fastify.register(webhookRoutes, { prefix: '/api/v1/webhooks' });
 
     // TODO: Add test endpoint after fixing middleware decorators
 

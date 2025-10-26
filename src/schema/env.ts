@@ -12,16 +12,17 @@ export const envSchema = {
     ENCRYPTION_KEY: { type: 'string' },
     CLIENT_ORIGINS: { type: 'string' },
 
-    // Razorpay
-    RZP_KEY_ID: { type: 'string' },
-    RZP_KEY_SECRET: { type: 'string' },
-    RZP_WEBHOOK_SECRET: { type: 'string' },
-
-    // Storage
+    // Storage (legacy)
     STORAGE_ENDPOINT: { type: 'string' },
     STORAGE_ACCESS_KEY: { type: 'string' },
     STORAGE_SECRET_KEY: { type: 'string' },
     STORAGE_BUCKET: { type: 'string', default: 'whatsapp-media' },
+
+    // Cloudflare R2
+    CLOUDFLARE_ACCOUNT_ID: { type: 'string' },
+    CLOUDFLARE_R2_ACCESS_KEY_ID: { type: 'string' },
+    CLOUDFLARE_R2_SECRET_ACCESS_KEY: { type: 'string' },
+    CLOUDFLARE_R2_BUCKET: { type: 'string' },
 
     // Social auth (optional)
     GOOGLE_CLIENT_ID: { type: 'string' },
