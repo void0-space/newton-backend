@@ -1,0 +1,58 @@
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Dependencies
+node_modules
+pnpm-lock.yaml
+npm-debug.log
+yarn-error.log
+pnpm-debug.log
+
+# Build outputs
+dist
+build
+
+# Development
+.env
+.env.local
+.env.*.local
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode
+.idea
+.sublime-text-project
+.sublime-workspace
+
+# Testing
+coverage
+.nyc_output
+.jest
+test
+
+# Misc
+README.md
+CHANGELOG.md
+LICENSE
+.husky
+.pnprc
+
+# Docker files
+Dockerfile
+.dockerignore
+docker-compose.yml
+
+# Development files
+src/test
+vitest.config.ts
+*.test.ts

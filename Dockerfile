@@ -1,46 +1,74 @@
 FROM node:18-alpine AS base
 
-# Install dependencies only when needed
-FROM base AS deps
+# Install system dependencies
 RUN apk add --no-cache libc6-compat
-WORKDIR /app
 
-# Install pnpm
+# Enable pnpm
 RUN corepack enable
+
+# ============================================================
+# Stage 1: Install dependencies
+# ============================================================
+FROM base AS deps
+
+WORKDIR /app
 
 # Copy package files
 COPY package.json pnpm-lock.yaml* ./
+
+# Install all dependencies (including dev)
 RUN pnpm install --frozen-lockfile
 
-# Rebuild the source code only when needed
+# ============================================================
+# Stage 2: Build application
+# ============================================================
 FROM base AS builder
+
 WORKDIR /app
+
+# Copy dependencies from deps stage
 COPY --from=deps /app/node_modules ./node_modules
+
+# Copy source code
 COPY . .
 
-# Install pnpm
-RUN corepack enable
-
+# Build the application
 RUN pnpm run build
 
-# Production image, copy all the files and run fastify
+# ============================================================
+# Stage 3: Production image (minimal size)
+# ============================================================
 FROM base AS runner
+
 WORKDIR /app
 
 ENV NODE_ENV production
+ENV PORT 4000
 
+# Create non-root user for security
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 fastify
 
-# Copy the standalone output
-COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/package.json ./package.json
+# Copy package files
+COPY package.json pnpm-lock.yaml* ./
 
+# Install production dependencies only
+RUN pnpm install --frozen-lockfile --prod && \
+    pnpm prune --prod
+
+# Copy built application from builder
+COPY --from=builder /app/dist ./dist
+
+# Fix ownership
+RUN chown -R fastify:nodejs /app
+
+# Switch to non-root user
 USER fastify
 
-EXPOSE 4000
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD wget --no-verbose --tries=1 --spider http://localhost:4000/health || exit 1
 
-ENV PORT 4000
+EXPOSE 4000
 
 CMD ["node", "dist/server.js"]
