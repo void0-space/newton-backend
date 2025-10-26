@@ -5,10 +5,11 @@
 
 # Dependencies
 node_modules
-pnpm-lock.yaml
 npm-debug.log
 yarn-error.log
 pnpm-debug.log
+
+# Keep pnpm-lock.yaml for reproducible builds in Docker!
 
 # Build outputs
 dist
