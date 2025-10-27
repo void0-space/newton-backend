@@ -82,9 +82,9 @@ async function start() {
         const allowedOrigins = [
           'http://localhost:3000',
           'http://localhost:3001',
-          'https://api.newton.ink',
-          'https://www.newton.ink',
-          'https://newton.ink',
+          'https://api.whatsappgateway.in',
+          'https://www.whatsappgateway.in',
+          'https://whatsappgateway.in',
         ];
 
         if (!origin || allowedOrigins.includes(origin)) {
