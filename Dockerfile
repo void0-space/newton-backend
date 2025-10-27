@@ -1,4 +1,4 @@
-FROM node:18-alpine AS base
+FROM node:24-alpine AS base
 
 # Install system dependencies
 RUN apk add --no-cache libc6-compat
