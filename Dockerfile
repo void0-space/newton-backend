@@ -65,6 +65,10 @@ RUN pnpm install --frozen-lockfile --prod && \
 # Copy built application from builder
 COPY --from=builder /app/dist ./dist
 
+# Copy drizzle config and migrations (needed for db:migrate command)
+COPY drizzle.config.ts ./
+COPY src/db ./src/db
+
 # Fix ownership
 RUN chown -R fastify:nodejs /app
 
