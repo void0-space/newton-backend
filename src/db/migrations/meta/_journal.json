@@ -71,6 +71,13 @@
       "when": 1757942303604,
       "tag": "0009_calm_blockbuster",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1761571437261,
+      "tag": "0010_tranquil_banshee",
+      "breakpoints": true
     }
   ]
 }
