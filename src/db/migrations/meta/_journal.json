@@ -5,78 +5,8 @@
     {
       "idx": 0,
       "version": "7",
-      "when": 1757420579038,
-      "tag": "0000_slim_chamber",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "7",
-      "when": 1757586350353,
-      "tag": "0001_nice_the_hand",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "7",
-      "when": 1757587231333,
-      "tag": "0002_large_switch",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "7",
-      "when": 1757587670080,
-      "tag": "0003_marvelous_meteorite",
-      "breakpoints": true
-    },
-    {
-      "idx": 4,
-      "version": "7",
-      "when": 1757588491870,
-      "tag": "0004_familiar_night_nurse",
-      "breakpoints": true
-    },
-    {
-      "idx": 5,
-      "version": "7",
-      "when": 1757606203845,
-      "tag": "0005_panoramic_purple_man",
-      "breakpoints": true
-    },
-    {
-      "idx": 6,
-      "version": "7",
-      "when": 1757606583889,
-      "tag": "0006_flawless_tyrannus",
-      "breakpoints": true
-    },
-    {
-      "idx": 7,
-      "version": "7",
-      "when": 1757624333007,
-      "tag": "0007_curly_champions",
-      "breakpoints": true
-    },
-    {
-      "idx": 8,
-      "version": "7",
-      "when": 1757797377474,
-      "tag": "0008_marvelous_justin_hammer",
-      "breakpoints": true
-    },
-    {
-      "idx": 9,
-      "version": "7",
-      "when": 1757942303604,
-      "tag": "0009_calm_blockbuster",
-      "breakpoints": true
-    },
-    {
-      "idx": 10,
-      "version": "7",
-      "when": 1761571437261,
-      "tag": "0010_tranquil_banshee",
+      "when": 1761577009592,
+      "tag": "0000_square_warstar",
       "breakpoints": true
     }
   ]
