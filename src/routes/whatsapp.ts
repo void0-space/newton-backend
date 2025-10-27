@@ -109,51 +109,55 @@ const whatsappRoutes: FastifyPluginAsync = async fastify => {
   fastify.get('/connection-status/:sessionId', { preHandler: sessionAuthMiddleware }, getSessionQR);
 
   // Group syncing route
-  fastify.post('/accounts/:id/sync-groups', { preHandler: sessionAuthMiddleware }, async (request: any, reply) => {
-    try {
-      const organizationId = request.organization.id;
-      const { id: sessionId } = request.params;
+  fastify.post(
+    '/accounts/:id/sync-groups',
+    { preHandler: sessionAuthMiddleware },
+    async (request: any, reply) => {
+      try {
+        const organizationId = request.organization.id;
+        const { id: sessionId } = request.params;
 
-      // Verify the session belongs to this organization
-      const [session] = await db
-        .select()
-        .from(whatsappSession)
-        .where(
-          and(
-            eq(whatsappSession.id, sessionId),
-            eq(whatsappSession.organizationId, organizationId)
+        // Verify the session belongs to this organization
+        const [session] = await db
+          .select()
+          .from(whatsappSession)
+          .where(
+            and(
+              eq(whatsappSession.id, sessionId),
+              eq(whatsappSession.organizationId, organizationId)
+            )
           )
-        )
-        .limit(1);
+          .limit(1);
 
-      if (!session) {
-        return reply.status(404).send({ error: 'Session not found' });
-      }
+        if (!session) {
+          return reply.status(404).send({ error: 'Session not found' });
+        }
 
-      // Call the BaileysManager to fetch and sync groups
-      const result = await fastify.baileys.fetchAndSyncGroups(sessionId, organizationId);
+        // Call the BaileysManager to fetch and sync groups
+        const result = await fastify.baileys.fetchAndSyncGroups(sessionId, organizationId);
 
-      if (result.error) {
-        return reply.status(400).send({
-          error: 'Failed to sync groups',
-          message: result.error,
+        if (result.error) {
+          return reply.status(400).send({
+            error: 'Failed to sync groups',
+            message: result.error,
+            synced: result.synced,
+          });
+        }
+
+        return reply.send({
+          success: true,
+          message: `Successfully synced ${result.synced} groups`,
           synced: result.synced,
         });
+      } catch (error) {
+        fastify.log.error('Error syncing groups:', error);
+        return reply.status(500).send({
+          error: 'Internal server error',
+          message: error instanceof Error ? error.message : 'Unknown error',
+        });
       }
-
-      return reply.send({
-        success: true,
-        message: `Successfully synced ${result.synced} groups`,
-        synced: result.synced,
-      });
-    } catch (error) {
-      fastify.log.error('Error syncing groups:', error);
-      return reply.status(500).send({
-        error: 'Internal server error',
-        message: error instanceof Error ? error.message : 'Unknown error',
-      });
     }
-  });
+  );
 
   // Real-time status updates via Server-Sent Events
   fastify.get(
@@ -164,7 +168,7 @@ const whatsappRoutes: FastifyPluginAsync = async fastify => {
         'Content-Type': 'text/event-stream',
         'Cache-Control': 'no-cache',
         Connection: 'keep-alive',
-        'Access-Control-Allow-Origin': 'http://localhost:3000',
+        'Access-Control-Allow-Origin': 'https://whatsappgateway.in',
         'Access-Control-Allow-Credentials': 'true',
         'Access-Control-Allow-Headers': 'Cache-Control',
       });

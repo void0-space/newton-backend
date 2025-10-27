@@ -144,7 +144,10 @@ const tusPlugin: FastifyPluginAsync = async (fastify, options) => {
 
         // Generate thumbnail for images and videos
         const [mediaRecord] = await db.select().from(media).where(eq(media.tusId, upload.id));
-        if (mediaRecord && (mediaRecord.mimeType.startsWith('image/') || mediaRecord.mimeType.startsWith('video/'))) {
+        if (
+          mediaRecord &&
+          (mediaRecord.mimeType.startsWith('image/') || mediaRecord.mimeType.startsWith('video/'))
+        ) {
           await generateThumbnail(fastify, s3Client, upload.id, mediaRecord);
         }
 
@@ -183,8 +186,8 @@ const tusPlugin: FastifyPluginAsync = async (fastify, options) => {
       const allowedOrigins = [
         'http://localhost:3000',
         'http://localhost:3001',
-        'https://www.newton.ink',
-        'https://newton.ink',
+        'https://www.whatsappgateway.in',
+        'https://whatsappgateway.in',
       ];
 
       if (origin && allowedOrigins.includes(origin)) {
@@ -221,8 +224,8 @@ const tusPlugin: FastifyPluginAsync = async (fastify, options) => {
       const allowedOrigins = [
         'http://localhost:3000',
         'http://localhost:3001',
-        'https://www.newton.ink',
-        'https://newton.ink',
+        'https://www.whatsappgateway.in',
+        'https://whatsappgateway.in',
       ];
 
       if (origin && allowedOrigins.includes(origin)) {
@@ -263,8 +266,8 @@ const tusPlugin: FastifyPluginAsync = async (fastify, options) => {
       const allowedOrigins = [
         'http://localhost:3000',
         'http://localhost:3001',
-        'https://www.newton.ink',
-        'https://newton.ink',
+        'https://www.whatsappgateway.in',
+        'https://whatsappgateway.in',
       ];
 
       if (origin && allowedOrigins.includes(origin)) {
@@ -297,7 +300,12 @@ const tusPlugin: FastifyPluginAsync = async (fastify, options) => {
 
       // Set CORS headers on raw response after hijacking
       const origin = request.headers.origin;
-      if (origin === 'http://localhost:3000' || origin === 'http://localhost:3001') {
+      if (
+        origin === 'http://localhost:3000' ||
+        origin === 'http://localhost:3001' ||
+        'https://whatsappgateway.in' ||
+        'https://www.whatsappgateway.in'
+      ) {
         reply.raw.setHeader('Access-Control-Allow-Origin', origin);
         reply.raw.setHeader('Access-Control-Allow-Credentials', 'true');
         reply.raw.setHeader(
@@ -336,8 +344,8 @@ const tusPlugin: FastifyPluginAsync = async (fastify, options) => {
       const allowedOrigins = [
         'http://localhost:3000',
         'http://localhost:3001',
-        'https://www.newton.ink',
-        'https://newton.ink',
+        'https://www.whatsappgateway.in',
+        'https://whatsappgateway.in',
       ];
 
       if (origin && allowedOrigins.includes(origin)) {
@@ -370,7 +378,12 @@ const tusPlugin: FastifyPluginAsync = async (fastify, options) => {
 
       // Set CORS headers on raw response after hijacking
       const origin = request.headers.origin;
-      if (origin === 'http://localhost:3000' || origin === 'http://localhost:3001') {
+      if (
+        origin === 'http://localhost:3000' ||
+        origin === 'http://localhost:3001' ||
+        'https://whatsappgateway.in' ||
+        'https://www.whatsappgateway.in'
+      ) {
         reply.raw.setHeader('Access-Control-Allow-Origin', origin);
         reply.raw.setHeader('Access-Control-Allow-Credentials', 'true');
         reply.raw.setHeader(
@@ -428,7 +441,12 @@ const tusPlugin: FastifyPluginAsync = async (fastify, options) => {
 
       const origin = request.headers.origin;
       if (origin === 'http://localhost:3000') {
-        reply.header('Access-Control-Allow-Origin', 'http://localhost:3000');
+        reply.header(
+          'Access-Control-Allow-Origin',
+          'http://localhost:3000' ||
+            'https://whatsappgateway.in' ||
+            'https://www.whatsappgateway.in'
+        );
       }
 
       reply.header('Access-Control-Allow-Credentials', 'true');
