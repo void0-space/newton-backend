@@ -41,9 +41,6 @@ COPY . .
 # Build the application
 RUN pnpm run build
 
-# Run database migrations
-RUN pnpm run db:migrate
-
 # ============================================================
 # Stage 3: Production image (minimal size)
 # ============================================================
