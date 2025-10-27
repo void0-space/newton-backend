@@ -26,6 +26,12 @@ FROM base AS builder
 
 WORKDIR /app
 
+# Accept DATABASE_URL as build argument
+ARG DATABASE_URL
+
+# Set environment variable for build
+ENV DATABASE_URL=${DATABASE_URL}
+
 # Copy dependencies from deps stage
 COPY --from=deps /app/node_modules ./node_modules
 
@@ -34,6 +40,9 @@ COPY . .
 
 # Build the application
 RUN pnpm run build
+
+# Run database migrations
+RUN pnpm run db:migrate
 
 # ============================================================
 # Stage 3: Production image (minimal size)
