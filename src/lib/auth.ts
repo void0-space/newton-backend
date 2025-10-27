@@ -50,7 +50,7 @@ export const auth = betterAuth({
   advanced: {
     crossSubDomainCookies: {
       enabled: process.env['NODE_ENV'] === 'production',
-      domain: 'newton.ink', // your domain
+      domain: 'whatsappgateway.in', // your domain
     },
     useSecureCookies: true,
   },
@@ -58,9 +58,9 @@ export const auth = betterAuth({
     'http://localhost:3000', // Admin dashboard
     'http://localhost:3001', // Web portal
     'http://localhost:4001', // Backend
-    'https://newton.ink',
-    'https://www.newton.ink',
-    'https://api.newton.ink',
+    'https://whatsappgateway.in',
+    'https://www.whatsappgateway.in',
+    'https://api.whatsappgateway.in',
   ],
 });
 
