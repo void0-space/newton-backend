@@ -122,28 +122,43 @@ export async function sendMessage(request: FastifyRequest, reply: FastifyReply) 
         // Attempt to reconnect the session
         await request.server.baileys.reconnectSession(session.id, organizationId);
 
-        // Wait a bit for connection to establish
-        await new Promise(resolve => setTimeout(resolve, 2000));
+        // Wait for connection with polling - up to 15 seconds
+        let isConnected = false;
+        let attempts = 0;
+        const maxAttempts = 30; // 30 attempts * 500ms = 15 seconds
 
-        // Get the updated session status
-        const updatedSession = await request.server.baileys.getSession(session.id, organizationId);
+        while (attempts < maxAttempts && !isConnected) {
+          await new Promise(resolve => setTimeout(resolve, 500));
 
-        if (!updatedSession || updatedSession.status !== 'connected') {
-          const currentStatus = updatedSession?.status || 'unknown';
-          request.log.error(
-            `API: Failed to reconnect session ${session.id}. Status: ${currentStatus}`
-          );
+          const updatedSession = await request.server.baileys.getSession(session.id, organizationId);
 
-          if (currentStatus === 'qr_required') {
+          if (updatedSession?.status === 'connected') {
+            isConnected = true;
+            session.socket = updatedSession.socket;
+            session.status = updatedSession.status;
+            request.log.info(`API: Successfully reconnected session ${session.id} after ${(attempts + 1) * 500}ms`);
+            break;
+          } else if (updatedSession?.status === 'qr_required') {
             return reply.status(400).send({
               error:
                 'WhatsApp session requires QR code scanning. Please scan the QR code in the admin panel to connect.',
               code: 'QR_SCAN_REQUIRED',
               sessionId: session.id,
-              currentStatus: currentStatus,
+              currentStatus: updatedSession.status,
               qrCode: updatedSession?.qrCode,
             });
           }
+
+          attempts++;
+        }
+
+        if (!isConnected) {
+          const finalSession = await request.server.baileys.getSession(session.id, organizationId);
+          const currentStatus = finalSession?.status || 'unknown';
+
+          request.log.error(
+            `API: Failed to reconnect session ${session.id}. Status: ${currentStatus} after ${attempts * 500}ms`
+          );
 
           return reply.status(503).send({
             error:
@@ -153,12 +168,6 @@ export async function sendMessage(request: FastifyRequest, reply: FastifyReply) 
             currentStatus: currentStatus,
           });
         }
-
-        // Update session reference to use the reconnected session
-        session.socket = updatedSession.socket;
-        session.status = updatedSession.status;
-
-        request.log.info(`API: Successfully reconnected session ${session.id}`);
       } catch (reconnectError) {
         request.log.error(reconnectError, `API: Error reconnecting session ${session.id}:`);
         return reply.status(503).send({

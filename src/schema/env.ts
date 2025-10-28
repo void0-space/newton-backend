@@ -10,7 +10,7 @@ export const envSchema = {
     BETTER_AUTH_SECRET: { type: 'string' },
     BETTER_AUTH_URL: { type: 'string', default: 'http://localhost:4001' },
     ENCRYPTION_KEY: { type: 'string' },
-    CLIENT_ORIGINS: { type: 'string' },
+    CORS_DOMAINS: { type: 'string' },
 
     // Storage (legacy)
     STORAGE_ENDPOINT: { type: 'string' },

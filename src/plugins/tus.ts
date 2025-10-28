@@ -183,12 +183,7 @@ const tusPlugin: FastifyPluginAsync = async (fastify, options) => {
       fastify.log.info('TUS OPTIONS handler called for /api/v1/media/upload');
 
       const origin = request.headers.origin;
-      const allowedOrigins = [
-        'http://localhost:3000',
-        'http://localhost:3001',
-        'https://www.whatsappgateway.in',
-        'https://whatsappgateway.in',
-      ];
+      const allowedOrigins = process.env.CORS_DOMAINS.split(',');
 
       if (origin && allowedOrigins.includes(origin)) {
         reply.header('Access-Control-Allow-Origin', origin);
@@ -221,12 +216,7 @@ const tusPlugin: FastifyPluginAsync = async (fastify, options) => {
       fastify.log.info(`TUS OPTIONS handler called for ${request.url}`);
 
       const origin = request.headers.origin;
-      const allowedOrigins = [
-        'http://localhost:3000',
-        'http://localhost:3001',
-        'https://www.whatsappgateway.in',
-        'https://whatsappgateway.in',
-      ];
+      const allowedOrigins = process.env.CORS_DOMAINS.split(',');
 
       if (origin && allowedOrigins.includes(origin)) {
         reply.header('Access-Control-Allow-Origin', origin);
@@ -263,12 +253,7 @@ const tusPlugin: FastifyPluginAsync = async (fastify, options) => {
       fastify.log.info(`TUS preHandler: ${request.method} ${request.url}`);
 
       const origin = request.headers.origin;
-      const allowedOrigins = [
-        'http://localhost:3000',
-        'http://localhost:3001',
-        'https://www.whatsappgateway.in',
-        'https://whatsappgateway.in',
-      ];
+      const allowedOrigins = process.env.CORS_DOMAINS.split(',');
 
       if (origin && allowedOrigins.includes(origin)) {
         reply.header('Access-Control-Allow-Origin', origin);
@@ -300,12 +285,8 @@ const tusPlugin: FastifyPluginAsync = async (fastify, options) => {
 
       // Set CORS headers on raw response after hijacking
       const origin = request.headers.origin;
-      if (
-        origin === 'http://localhost:3000' ||
-        origin === 'http://localhost:3001' ||
-        'https://whatsappgateway.in' ||
-        'https://www.whatsappgateway.in'
-      ) {
+      const allowedOrigins = process.env.CORS_DOMAINS.split(',');
+      if (allowedOrigins.includes(origin)) {
         reply.raw.setHeader('Access-Control-Allow-Origin', origin);
         reply.raw.setHeader('Access-Control-Allow-Credentials', 'true');
         reply.raw.setHeader(
@@ -341,12 +322,7 @@ const tusPlugin: FastifyPluginAsync = async (fastify, options) => {
       fastify.log.info(`TUS preHandler: ${request.method} ${request.url}`);
 
       const origin = request.headers.origin;
-      const allowedOrigins = [
-        'http://localhost:3000',
-        'http://localhost:3001',
-        'https://www.whatsappgateway.in',
-        'https://whatsappgateway.in',
-      ];
+      const allowedOrigins = process.env.CORS_DOMAINS.split(',');
 
       if (origin && allowedOrigins.includes(origin)) {
         reply.header('Access-Control-Allow-Origin', origin);
@@ -378,12 +354,8 @@ const tusPlugin: FastifyPluginAsync = async (fastify, options) => {
 
       // Set CORS headers on raw response after hijacking
       const origin = request.headers.origin;
-      if (
-        origin === 'http://localhost:3000' ||
-        origin === 'http://localhost:3001' ||
-        'https://whatsappgateway.in' ||
-        'https://www.whatsappgateway.in'
-      ) {
+      const allowedOrigins = process.env.CORS_DOMAINS.split(',');
+      if (allowedOrigins.includes(origin)) {
         reply.raw.setHeader('Access-Control-Allow-Origin', origin);
         reply.raw.setHeader('Access-Control-Allow-Credentials', 'true');
         reply.raw.setHeader(
@@ -427,35 +399,6 @@ const tusPlugin: FastifyPluginAsync = async (fastify, options) => {
       uploadCompleted: mediaRecord.uploadCompleted,
       createdAt: mediaRecord.createdAt,
     });
-  });
-
-  // Add a test CORS endpoint to debug
-  fastify.route({
-    method: 'OPTIONS',
-    url: '/api/v1/media/test-cors',
-    config: {
-      cors: false,
-    },
-    handler: async (request, reply) => {
-      fastify.log.info('TEST CORS handler called');
-
-      const origin = request.headers.origin;
-      if (origin === 'http://localhost:3000') {
-        reply.header(
-          'Access-Control-Allow-Origin',
-          'http://localhost:3000' ||
-            'https://whatsappgateway.in' ||
-            'https://www.whatsappgateway.in'
-        );
-      }
-
-      reply.header('Access-Control-Allow-Credentials', 'true');
-      reply.header('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, HEAD, OPTIONS');
-      reply.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
-
-      fastify.log.info('TEST: Headers set, sending 204');
-      return reply.status(204).send();
-    },
   });
 
   fastify.log.info('TUS plugin initialized with FileStore + R2 backend');

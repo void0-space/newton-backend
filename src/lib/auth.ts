@@ -54,14 +54,7 @@ export const auth = betterAuth({
     },
     useSecureCookies: true,
   },
-  trustedOrigins: [
-    'http://localhost:3000', // Admin dashboard
-    'http://localhost:3001', // Web portal
-    'http://localhost:4001', // Backend
-    'https://whatsappgateway.in',
-    'https://www.whatsappgateway.in',
-    'https://api.whatsappgateway.in',
-  ],
+  trustedOrigins: process.env['CORS_DOMAINS'].split(','),
 });
 
 export type Session = typeof auth.$Infer.Session;

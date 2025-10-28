@@ -9,11 +9,15 @@ import {
   WAMessage,
   proto,
   WASocket,
+  isJidBroadcast,
+  isJidNewsletter,
+  isJidStatusBroadcast,
+  isJidMetaAI,
 } from '@whiskeysockets/baileys';
 import QRCode from 'qrcode';
 import { FastifyInstance } from 'fastify';
 import { db } from '../db/drizzle';
-import { whatsappSession, message } from '../db/schema';
+import { whatsappSession, message, contact } from '../db/schema';
 import { eq, and } from 'drizzle-orm';
 import { encryptData } from '../utils/crypto';
 import { createId } from '@paralleldrive/cuid2';
@@ -89,6 +93,11 @@ export class BaileysManager {
         browser: Browsers.macOS('Desktop'),
         // V7 simplified config - removed legacy options
         defaultQueryTimeoutMs: undefined,
+        shouldIgnoreJid: jid =>
+          isJidBroadcast(jid) ||
+          isJidNewsletter(jid) ||
+          isJidStatusBroadcast(jid) ||
+          isJidMetaAI(jid),
       });
 
       session.socket = socket;
@@ -137,6 +146,8 @@ export class BaileysManager {
           this.fastify.log.error('Error in handleContactsUpsert:', err)
         );
       });
+
+      this.fastify.log.info(`✅ Registered contacts.upsert listener for session ${sessionId}`);
 
       // Handle groups sync
       socket.ev.on('groups.upsert', groups => {
@@ -379,7 +390,10 @@ export class BaileysManager {
     return result;
   }
 
-  async fetchAndSyncGroups(sessionId: string, organizationId: string): Promise<{ synced: number; error?: string }> {
+  async fetchAndSyncGroups(
+    sessionId: string,
+    organizationId: string
+  ): Promise<{ synced: number; error?: string }> {
     try {
       const sessionKey = `${organizationId}:${sessionId}`;
       const session = this.sessions.get(sessionKey);
@@ -647,19 +661,63 @@ export class BaileysManager {
 
       this.fastify.log.info(`Published connected event for session ${sessionId}`);
 
+      // Fetch and sync WhatsApp contacts after successful connection
+      // In Baileys V7, we need to extract contacts from chats
+      try {
+        this.fastify.log.info(
+          `Fetching WhatsApp contacts for newly connected session ${sessionId}...`
+        );
+
+        // Try to get contacts from socket store
+        const allChats = (session.socket.store?.chats?.getAll?.() || []) as any[];
+        const contactsMap = new Map<string, Contact>();
+
+        // Extract unique contacts from chats
+        for (const chat of allChats) {
+          if (chat.id && !chat.id.includes('@g.us')) {
+            // Skip group chats
+            const contact = session.socket.contacts?.[chat.id];
+            if (contact && contact.id) {
+              contactsMap.set(chat.id, contact);
+            }
+          }
+        }
+
+        const contactArray = Array.from(contactsMap.values());
+        this.fastify.log.info(
+          `Found ${contactArray.length} contacts from chats for session ${sessionId}`
+        );
+
+        if (contactArray.length > 0) {
+          await this.handleContactsUpsert({ sessionId, organizationId, sessionKey }, contactArray);
+          this.fastify.log.info(
+            `Successfully synced ${contactArray.length} contacts for session ${sessionId}`
+          );
+        } else {
+          this.fastify.log.info(
+            `No contacts found in chats for session ${sessionId}, waiting for contacts.upsert event`
+          );
+        }
+      } catch (contactSyncError) {
+        this.fastify.log.warn(
+          `Failed to sync contacts for session ${sessionId}:`,
+          contactSyncError
+        );
+        // Don't fail the connection if contact sync fails
+      }
+
       // Fetch and sync WhatsApp groups after successful connection
       try {
-        this.fastify.log.info(`Fetching WhatsApp groups for newly connected session ${sessionId}...`);
+        this.fastify.log.info(
+          `Fetching WhatsApp groups for newly connected session ${sessionId}...`
+        );
         const groupSyncResult = await this.fetchAndSyncGroups(sessionId, organizationId);
         this.fastify.log.info(
           `Successfully synced ${groupSyncResult.synced} groups for session ${sessionId}`,
           groupSyncResult
         );
       } catch (groupSyncError) {
-        this.fastify.log.warn(
-          `Failed to sync groups for session ${sessionId}:`,
-          groupSyncError
-        );
+        this.fastify.log.warn(`Failed to sync groups for session ${sessionId}:`, groupSyncError);
         // Don't fail the connection if group sync fails
       }
 
@@ -715,6 +773,11 @@ export class BaileysManager {
         browser: Browsers.macOS('Desktop'),
         // V7 simplified config
         defaultQueryTimeoutMs: undefined,
+        shouldIgnoreJid: jid =>
+          isJidBroadcast(jid) ||
+          isJidNewsletter(jid) ||
+          isJidStatusBroadcast(jid) ||
+          isJidMetaAI(jid),
       });
 
       session.socket = socket;
@@ -736,15 +799,21 @@ export class BaileysManager {
           this.fastify.log.error('Error in handleMessageUpdates:', err)
         )
       );
-      socket.ev.on('contacts.upsert', contacts =>
+      socket.ev.on('contacts.upsert', contacts => {
+        this.fastify.log.info(`👥 contacts.upsert event fired in recreateSocket for ${sessionId}`);
         this.handleContactsUpsert(sessionContext, contacts).catch(err =>
           this.fastify.log.error('Error in handleContactsUpsert:', err)
-        )
-      );
-      socket.ev.on('groups.upsert', groups =>
+        );
+      });
+      socket.ev.on('groups.upsert', groups => {
+        this.fastify.log.info(`👫 groups.upsert event fired in recreateSocket for ${sessionId}`);
         this.handleGroupsUpsert(sessionContext, groups).catch(err =>
           this.fastify.log.error('Error in handleGroupsUpsert:', err)
-        )
+        );
+      });
+
+      this.fastify.log.info(
+        `✅ Re-registered contacts and groups listeners in recreateSocket for ${sessionId}`
       );
     } catch (error) {
       this.fastify.log.error(`Failed to recreate socket for session ${sessionId}:`, error);
@@ -902,10 +971,6 @@ export class BaileysManager {
     try {
       this.fastify.log.info(`Processing ${contacts.length} contacts from WhatsApp`);
 
-      // Import contact schema
-      const { contact } = await import('../db/schema');
-      const { createId } = await import('@paralleldrive/cuid2');
-
       for (const waContact of contacts) {
         try {
           const phoneNumber = waContact.id.split('@')[0];
@@ -1061,7 +1126,9 @@ export class BaileysManager {
 
                   if (groupChanged || needsWhatsappGroupTag) {
                     const newGroups = groupChanged ? [...currentGroups, groupName] : currentGroups;
-                    const newTags = needsWhatsappGroupTag ? [...currentTags, 'whatsapp-group'] : currentTags;
+                    const newTags = needsWhatsappGroupTag
+                      ? [...currentTags, 'whatsapp-group']
+                      : currentTags;
 
                     await db
                       .update(contact)

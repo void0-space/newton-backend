@@ -16,6 +16,7 @@ declare namespace NodeJS {
     RZP_WEBHOOK_SECRET?: string;
     WEBHOOK_URL?: string;
     API_PORT?: string;
+    CORS_DOMAINS: string;
     [key: string]: string | undefined;
   }
 }

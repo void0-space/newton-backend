@@ -253,6 +253,47 @@ const whatsappRoutes: FastifyPluginAsync = async fastify => {
 
   // Public API route - require API key
   fastify.post('/send', { preHandler: apiKeyAuthMiddleware }, sendMessage);
+
+  // GET endpoint for sending messages via URL parameters
+  fastify.get('/send', async (request: FastifyRequest, reply) => {
+    try {
+      // Get API key from either URL parameter or header
+      const queryParams = request.query as any;
+      const apiKey = queryParams.apiKey || request.headers['x-api-key'];
+
+      if (!apiKey) {
+        return reply.status(401).send({
+          error: 'API key required',
+          code: 'API_KEY_REQUIRED',
+          message: 'Provide API key via ?apiKey=your-key or X-API-Key header',
+        });
+      }
+
+      // Set the API key in the request headers for the sendMessage handler
+      request.headers['x-api-key'] = apiKey as string;
+
+      // Set the request body from query parameters
+      (request as any).body = {
+        to: queryParams.to,
+        message: queryParams.message,
+        type: queryParams.type || 'text',
+        mediaUrl: queryParams.mediaUrl,
+        fileName: queryParams.fileName,
+        caption: queryParams.caption,
+        replyMessageId: queryParams.replyMessageId,
+      };
+
+      // Call the existing sendMessage handler
+      return sendMessage(request, reply);
+    } catch (error) {
+      request.log.error('GET /send error:', error);
+      return reply.status(500).send({
+        error: 'Failed to send message',
+        code: 'SEND_MESSAGE_FAILED',
+        details: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  });
 };
 
 export default whatsappRoutes;

@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Newton WhatsApp API Documentation</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      line-height: 1.6;
+      color: #333;
+      background: #f5f5f5;
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+
+    header {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 40px 20px;
+      margin-bottom: 40px;
+      border-radius: 8px;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    }
+
+    header h1 {
+      font-size: 2.5em;
+      margin-bottom: 10px;
+    }
+
+    header p {
+      font-size: 1.1em;
+      opacity: 0.9;
+    }
+
+    .section {
+      background: white;
+      padding: 30px;
+      margin-bottom: 30px;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+
+    h2 {
+      color: #667eea;
+      margin-bottom: 20px;
+      padding-bottom: 10px;
+      border-bottom: 2px solid #667eea;
+    }
+
+    h3 {
+      color: #764ba2;
+      margin: 20px 0 10px 0;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 15px 0;
+    }
+
+    table th {
+      background: #f0f0f0;
+      padding: 12px;
+      text-align: left;
+      font-weight: 600;
+      border: 1px solid #ddd;
+    }
+
+    table td {
+      padding: 12px;
+      border: 1px solid #ddd;
+    }
+
+    table tr:nth-child(even) {
+      background: #fafafa;
+    }
+
+    code {
+      background: #f4f4f4;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+      color: #d63384;
+    }
+
+    pre {
+      background: #2d2d2d;
+      color: #f8f8f2;
+      padding: 20px;
+      border-radius: 8px;
+      overflow-x: auto;
+      margin: 15px 0;
+      font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+      font-size: 0.9em;
+      line-height: 1.4;
+    }
+
+    .copy-btn {
+      background: #667eea;
+      color: white;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 0.9em;
+      float: right;
+      margin-bottom: 10px;
+    }
+
+    .copy-btn:hover {
+      background: #764ba2;
+    }
+
+    .param-table {
+      margin: 20px 0;
+    }
+
+    .example {
+      background: #f9f9f9;
+      border-left: 4px solid #667eea;
+      padding: 15px;
+      margin: 15px 0;
+    }
+
+    .response {
+      background: #f0fdf4;
+      border-left: 4px solid #10b981;
+      padding: 15px;
+      margin: 15px 0;
+    }
+
+    .error {
+      background: #fef2f2;
+      border-left: 4px solid #ef4444;
+      padding: 15px;
+      margin: 15px 0;
+    }
+
+    .nav {
+      display: flex;
+      gap: 20px;
+      margin-bottom: 30px;
+      flex-wrap: wrap;
+    }
+
+    .nav a {
+      padding: 10px 20px;
+      background: #667eea;
+      color: white;
+      text-decoration: none;
+      border-radius: 4px;
+      transition: background 0.3s;
+    }
+
+    .nav a:hover {
+      background: #764ba2;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 0.85em;
+      font-weight: 600;
+      margin-right: 5px;
+    }
+
+    .badge.required {
+      background: #fee2e2;
+      color: #991b1b;
+    }
+
+    .badge.optional {
+      background: #dbeafe;
+      color: #0c4a6e;
+    }
+
+    .badge.conditional {
+      background: #fef3c7;
+      color: #92400e;
+    }
+
+    .message-type {
+      display: inline-block;
+      background: #dbeafe;
+      color: #0c4a6e;
+      padding: 8px 12px;
+      border-radius: 4px;
+      margin: 5px 5px 5px 0;
+      font-weight: 500;
+    }
+
+    footer {
+      text-align: center;
+      padding: 20px;
+      color: #666;
+      margin-top: 40px;
+    }
+
+    .get-badge {
+      background: #3b82f6;
+      color: white;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-weight: 600;
+      font-size: 0.9em;
+    }
+
+    .post-badge {
+      background: #10b981;
+      color: white;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-weight: 600;
+      font-size: 0.9em;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>🚀 Newton WhatsApp API</h1>
+      <p>Send messages via WhatsApp with a simple REST API</p>
+    </header>
+
+    <div class="nav">
+      <a href="#overview">Overview</a>
+      <a href="#authentication">Authentication</a>
+      <a href="#send-message">Send Message</a>
+      <a href="#message-types">Message Types</a>
+      <a href="#examples">Examples</a>
+      <a href="#errors">Errors</a>
+    </div>
+
+    <div class="section" id="overview">
+      <h2>📖 Overview</h2>
+      <p>Newton WhatsApp API allows you to send messages programmatically using simple HTTP requests. All requests are handled through URL parameters for maximum simplicity.</p>
+
+      <h3>Base URL</h3>
+      <pre>https://api.whatsappgateway.in/api/v1/whatsapp</pre>
+
+      <h3>Protocol</h3>
+      <p>All communication is done over HTTPS. Both <span class="get-badge">GET</span> and <span class="post-badge">POST</span> methods are supported with identical functionality.</p>
+    </div>
+
+    <div class="section" id="authentication">
+      <h2>🔐 Authentication</h2>
+      <p>All requests require an API key. Provide it as a URL parameter:</p>
+
+      <pre>?apiKey=your-api-key-here</pre>
+
+      <p style="margin-top: 15px;">Example:</p>
+      <pre>https://api.whatsappgateway.in/api/v1/whatsapp/send?apiKey=YOUR_API_KEY&to=917601940546&message=Hello</pre>
+
+      <p style="margin-top: 15px; color: #666; font-size: 0.9em;">
+        <strong>Tip:</strong> You can also use the <code>X-API-Key</code> header instead of URL parameter if you prefer.
+      </p>
+    </div>
+
+    <div class="section" id="send-message">
+      <h2>✉️ Send Message Endpoint</h2>
+
+      <h3>Request</h3>
+      <p><span class="get-badge">GET</span> <span class="post-badge">POST</span> <code>/send</code></p>
+
+      <h3>Parameters</h3>
+      <table class="param-table">
+        <thead>
+          <tr>
+            <th>Parameter</th>
+            <th>Type</th>
+            <th>Status</th>
+            <th>Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>apiKey</code></td>
+            <td>string</td>
+            <td><span class="badge required">Required</span></td>
+            <td>Your API key for authentication</td>
+          </tr>
+          <tr>
+            <td><code>to</code></td>
+            <td>string</td>
+            <td><span class="badge required">Required</span></td>
+            <td>Recipient's phone number (e.g., 917601940546)</td>
+          </tr>
+          <tr>
+            <td><code>message</code></td>
+            <td>string</td>
+            <td><span class="badge conditional">Required for text</span></td>
+            <td>Message content (required for text messages)</td>
+          </tr>
+          <tr>
+            <td><code>type</code></td>
+            <td>string</td>
+            <td><span class="badge optional">Optional</span></td>
+            <td>Message type (text, image, video, audio, document). Default: text</td>
+          </tr>
+          <tr>
+            <td><code>mediaUrl</code></td>
+            <td>string</td>
+            <td><span class="badge conditional">Required for media</span></td>
+            <td>URL of media file (required for non-text messages)</td>
+          </tr>
+          <tr>
+            <td><code>fileName</code></td>
+            <td>string</td>
+            <td><span class="badge optional">Optional</span></td>
+            <td>File name for document messages</td>
+          </tr>
+          <tr>
+            <td><code>caption</code></td>
+            <td>string</td>
+            <td><span class="badge optional">Optional</span></td>
+            <td>Caption for media messages</td>
+          </tr>
+          <tr>
+            <td><code>replyMessageId</code></td>
+            <td>string</td>
+            <td><span class="badge optional">Optional</span></td>
+            <td>Message ID to reply to</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>Response (Success)</h3>
+      <div class="response">
+        <pre>{
+  "success": true,
+  "messageId": "A5C8232A8C65858FAB1A64E140D8C68B",
+  "status": "sent",
+  "to": "917601940546@s.whatsapp.net",
+  "sessionId": "session-id-here",
+  "timestamp": "2025-10-27T17:38:59.000Z"
+}</pre>
+      </div>
+    </div>
+
+    <div class="section" id="message-types">
+      <h2>💬 Message Types</h2>
+
+      <h3>Text Message</h3>
+      <p>Send a simple text message.</p>
+      <div class="example">
+        <p><strong>Parameters:</strong></p>
+        <ul style="margin-left: 20px; margin-top: 10px;">
+          <li><code>to</code> - Recipient phone number</li>
+          <li><code>message</code> - Text content</li>
+          <li><code>type</code> - "text"</li>
+        </ul>
+      </div>
+
+      <h3>Image Message</h3>
+      <p>Send an image with optional caption.</p>
+      <div class="example">
+        <p><strong>Parameters:</strong></p>
+        <ul style="margin-left: 20px; margin-top: 10px;">
+          <li><code>to</code> - Recipient phone number</li>
+          <li><code>type</code> - "image"</li>
+          <li><code>mediaUrl</code> - Image URL</li>
+          <li><code>caption</code> - (Optional) Image caption</li>
+        </ul>
+      </div>
+
+      <h3>Video Message</h3>
+      <p>Send a video with optional caption.</p>
+      <div class="example">
+        <p><strong>Parameters:</strong></p>
+        <ul style="margin-left: 20px; margin-top: 10px;">
+          <li><code>to</code> - Recipient phone number</li>
+          <li><code>type</code> - "video"</li>
+          <li><code>mediaUrl</code> - Video URL</li>
+          <li><code>caption</code> - (Optional) Video caption</li>
+        </ul>
+      </div>
+
+      <h3>Audio Message</h3>
+      <p>Send an audio file.</p>
+      <div class="example">
+        <p><strong>Parameters:</strong></p>
+        <ul style="margin-left: 20px; margin-top: 10px;">
+          <li><code>to</code> - Recipient phone number</li>
+          <li><code>type</code> - "audio"</li>
+          <li><code>mediaUrl</code> - Audio URL</li>
+        </ul>
+      </div>
+
+      <h3>Document Message</h3>
+      <p>Send a document (PDF, DOC, etc.) with optional caption.</p>
+      <div class="example">
+        <p><strong>Parameters:</strong></p>
+        <ul style="margin-left: 20px; margin-top: 10px;">
+          <li><code>to</code> - Recipient phone number</li>
+          <li><code>type</code> - "document"</li>
+          <li><code>mediaUrl</code> - Document URL</li>
+          <li><code>fileName</code> - File name</li>
+          <li><code>caption</code> - (Optional) Document caption</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="section" id="examples">
+      <h2>📝 Examples</h2>
+
+      <h3>Text Message</h3>
+      <button class="copy-btn" onclick="copyCode('text-example')">Copy</button>
+      <pre id="text-example">https://api.whatsappgateway.in/api/v1/whatsapp/send?apiKey=YOUR_API_KEY&to=917601940546&message=Hello%20World&type=text</pre>
+
+      <h3>Image Message</h3>
+      <button class="copy-btn" onclick="copyCode('image-example')">Copy</button>
+      <pre id="image-example">https://api.whatsappgateway.in/api/v1/whatsapp/send?apiKey=YOUR_API_KEY&to=917601940546&type=image&mediaUrl=https://example.com/image.jpg&caption=Check%20this%20out</pre>
+
+      <h3>Video Message</h3>
+      <button class="copy-btn" onclick="copyCode('video-example')">Copy</button>
+      <pre id="video-example">https://api.whatsappgateway.in/api/v1/whatsapp/send?apiKey=YOUR_API_KEY&to=917601940546&type=video&mediaUrl=https://example.com/video.mp4&caption=Check%20this%20video</pre>
+
+      <h3>Audio Message</h3>
+      <button class="copy-btn" onclick="copyCode('audio-example')">Copy</button>
+      <pre id="audio-example">https://api.whatsappgateway.in/api/v1/whatsapp/send?apiKey=YOUR_API_KEY&to=917601940546&type=audio&mediaUrl=https://example.com/audio.mp3</pre>
+
+      <h3>Document Message</h3>
+      <button class="copy-btn" onclick="copyCode('doc-example')">Copy</button>
+      <pre id="doc-example">https://api.whatsappgateway.in/api/v1/whatsapp/send?apiKey=YOUR_API_KEY&to=917601940546&type=document&mediaUrl=https://example.com/document.pdf&fileName=my-document.pdf</pre>
+
+      <h3>cURL Examples</h3>
+
+      <h4>Text Message</h4>
+      <button class="copy-btn" onclick="copyCode('curl-text')">Copy</button>
+      <pre id="curl-text">curl "https://api.whatsappgateway.in/api/v1/whatsapp/send?apiKey=YOUR_API_KEY&to=917601940546&message=Hello&type=text"</pre>
+
+      <h4>Image Message</h4>
+      <button class="copy-btn" onclick="copyCode('curl-image')">Copy</button>
+      <pre id="curl-image">curl "https://api.whatsappgateway.in/api/v1/whatsapp/send?apiKey=YOUR_API_KEY&to=917601940546&type=image&mediaUrl=https://example.com/image.jpg&caption=Hello"</pre>
+
+      <h3>JavaScript Example</h3>
+      <button class="copy-btn" onclick="copyCode('js-example')">Copy</button>
+      <pre id="js-example">const response = await fetch('https://api.whatsappgateway.in/api/v1/whatsapp/send?apiKey=YOUR_API_KEY&to=917601940546&message=Hello&type=text');
+const data = await response.json();
+console.log(data);</pre>
+
+      <h3>Python Example</h3>
+      <button class="copy-btn" onclick="copyCode('py-example')">Copy</button>
+      <pre id="py-example">import requests
+
+url = "https://api.whatsappgateway.in/api/v1/whatsapp/send"
+params = {
+    "apiKey": "YOUR_API_KEY",
+    "to": "917601940546",
+    "message": "Hello",
+    "type": "text"
+}
+
+response = requests.get(url, params=params)
+print(response.json())</pre>
+    </div>
+
+    <div class="section" id="errors">
+      <h2>⚠️ Error Responses</h2>
+
+      <h3>401 - Unauthorized (Missing/Invalid API Key)</h3>
+      <div class="error">
+        <pre>{
+  "error": "API key required",
+  "code": "API_KEY_REQUIRED",
+  "message": "Provide API key via ?apiKey=your-key or X-API-Key header"
+}</pre>
+      </div>
+
+      <h3>400 - Validation Error</h3>
+      <div class="error">
+        <pre>{
+  "error": "Validation failed",
+  "code": "VALIDATION_ERROR",
+  "details": [
+    {
+      "code": "too_small",
+      "message": "Recipient phone number is required",
+      "path": ["to"]
+    }
+  ]
+}</pre>
+      </div>
+
+      <h3>404 - No Connected Session</h3>
+      <div class="error">
+        <pre>{
+  "error": "No connected WhatsApp session found",
+  "code": "SESSION_NOT_FOUND",
+  "message": "Please connect a WhatsApp account first"
+}</pre>
+      </div>
+
+      <h3>500 - Server Error</h3>
+      <div class="error">
+        <pre>{
+  "error": "Failed to send message",
+  "code": "SEND_MESSAGE_FAILED",
+  "details": "Error message details"
+}</pre>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>💡 Best Practices</h2>
+      <ul style="margin-left: 20px; line-height: 1.8;">
+        <li><strong>URL Encoding:</strong> Always properly URL-encode special characters in parameters</li>
+        <li><strong>Rate Limiting:</strong> Limit requests to 100 per minute per API key</li>
+        <li><strong>Error Handling:</strong> Implement proper error handling and retry logic</li>
+        <li><strong>Message IDs:</strong> Save returned messageId for delivery tracking</li>
+        <li><strong>Valid URLs:</strong> Ensure media URLs are publicly accessible and correct format</li>
+        <li><strong>Phone Numbers:</strong> Use valid 10-digit phone numbers with country code</li>
+      </ul>
+    </div>
+
+    <footer>
+      <p>Newton WhatsApp API Documentation | <a href="https://whatsappgateway.in" style="color: #667eea; text-decoration: none;">Visit Dashboard</a></p>
+    </footer>
+  </div>
+
+  <script>
+    function copyCode(elementId) {
+      const element = document.getElementById(elementId);
+      const text = element.innerText;
+      navigator.clipboard.writeText(text).then(() => {
+        const button = event.target;
+        const originalText = button.innerText;
+        button.innerText = 'Copied!';
+        setTimeout(() => {
+          button.innerText = originalText;
+        }, 2000);
+      });
+    }
+  </script>
+</body>
+</html>
