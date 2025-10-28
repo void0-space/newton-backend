@@ -79,7 +79,13 @@ async function start() {
     await fastify.register(cors, {
       origin: (origin, callback) => {
         // Always allow these origins
-        const allowedOrigins = process.env.CORS_DOMAINS.split(',');
+        const allowedOrigins = [
+          'http://localhost:3000',
+          'http://localhost:3001',
+          'https://api.whatsappgateway.in',
+          'https://www.whatsappgateway.in',
+          'https://whatsappgateway.in',
+        ];
 
         if (!origin || allowedOrigins.includes(origin)) {
           callback(null, true);
