@@ -1,0 +1,1 @@
+ALTER TABLE "whatsapp_session" ADD COLUMN "pairing_code" text;

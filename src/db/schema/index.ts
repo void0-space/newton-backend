@@ -1,6 +1,9 @@
 // Auth schema
 export * from './auth';
 
+// Baileys auth state schema
+export * from './baileysAuthState';
+
 // WhatsApp schema
 export * from './whatsapp';
 

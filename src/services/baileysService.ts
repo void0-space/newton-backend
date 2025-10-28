@@ -1,7 +1,6 @@
 import {
   default as makeWASocket,
   DisconnectReason,
-  useMultiFileAuthState,
   Browsers,
   ConnectionState,
   Contact,
@@ -21,16 +20,16 @@ import { whatsappSession, message, contact } from '../db/schema';
 import { eq, and } from 'drizzle-orm';
 import { encryptData } from '../utils/crypto';
 import { createId } from '@paralleldrive/cuid2';
-import fs from 'fs/promises';
-import path from 'path';
 import { WebhookService } from './webhookService';
 import { AutoReplyService } from './autoReplyService';
+import { useDbAuthState } from '../utils/dbAuthState';
 
 export interface BaileysSession {
   id: string;
   organizationId: string;
   socket: WASocket | null;
   qrCode: string | null;
+  pairingCode: string | null;
   status: 'disconnected' | 'connecting' | 'connected' | 'qr_required';
   phoneNumber?: string;
   profileName?: string;
@@ -68,18 +67,15 @@ export class BaileysManager {
         throw new Error('Session already exists');
       }
 
-      // Create session directory for auth state
-      const sessionDir = path.join(process.cwd(), 'sessions', sessionId);
-      await fs.mkdir(sessionDir, { recursive: true });
-
-      // Initialize auth state
-      const { state, saveCreds } = await useMultiFileAuthState(sessionDir);
+      // Initialize auth state from database
+      const { state, saveCreds } = await useDbAuthState(sessionId, this.fastify.log);
 
       const session: BaileysSession = {
         id: sessionId,
         organizationId,
         socket: null,
         qrCode: null,
+        pairingCode: null,
         status: 'connecting',
         lastActive: new Date(),
         manuallyDisconnected: false, // Clear manually disconnected flag when starting new session
@@ -164,7 +160,7 @@ export class BaileysManager {
 
       return session;
     } catch (error) {
-      this.fastify.log.error(`Failed to create session ${sessionId}:`, error);
+      this.fastify.log.error(error, `Failed to create session ${sessionId}:`);
       throw error;
     }
   }
@@ -293,15 +289,6 @@ export class BaileysManager {
         await this.saveSessionToDb(session);
 
         this.sessions.delete(sessionKey);
-
-        // Clean up session directory
-        const sessionDir = path.join(process.cwd(), 'sessions', sessionId);
-        try {
-          await fs.rm(sessionDir, { recursive: true, force: true });
-          this.fastify.log.info(`Cleaned session directory for ${sessionId}`);
-        } catch (error) {
-          this.fastify.log.warn(`Failed to clean session directory ${sessionDir}:`, error);
-        }
       }
 
       // Publish disconnect event with more context
@@ -437,6 +424,7 @@ export class BaileysManager {
     const session = this.sessions.get(sessionKey);
 
     this.fastify.log.info(
+      update,
       `Connection update for session ${sessionId}: ${JSON.stringify({
         foundSession: !!session,
         sessionKey,
@@ -532,15 +520,6 @@ export class BaileysManager {
         session.qrCode = null;
         this.sessions.delete(sessionKey);
 
-        // Clean up session directory
-        const sessionDir = path.join(process.cwd(), 'sessions', sessionId);
-        try {
-          await fs.rm(sessionDir, { recursive: true, force: true });
-          this.fastify.log.info(`Cleaned up session directory for logged out session ${sessionId}`);
-        } catch (error) {
-          this.fastify.log.warn(`Failed to clean session directory ${sessionDir}:`, error);
-        }
-
         await this.publishEvent(sessionId, 'disconnected', { reason: 'logged_out' });
       } else if (statusCode === DisconnectReason.timedOut) {
         // Only reconnect if alwaysShowOnline is enabled AND not manually disconnected
@@ -569,14 +548,6 @@ export class BaileysManager {
         session.status = 'qr_required';
         session.socket = null;
         session.qrCode = null;
-
-        const sessionDir = path.join(process.cwd(), 'sessions', sessionId);
-        try {
-          await fs.rm(sessionDir, { recursive: true, force: true });
-          this.fastify.log.info(`Cleaned up session directory for device conflict ${sessionId}`);
-        } catch (error) {
-          this.fastify.log.warn(`Failed to clean session directory ${sessionDir}:`, error);
-        }
 
         await this.publishEvent(sessionId, 'qr_required', { reason: 'device_conflict' });
       } else {
@@ -764,8 +735,7 @@ export class BaileysManager {
     }
 
     try {
-      const sessionDir = path.join(process.cwd(), 'sessions', sessionId);
-      const { state, saveCreds } = await useMultiFileAuthState(sessionDir);
+      const { state, saveCreds } = await useDbAuthState(sessionId, this.fastify.log);
 
       const socket = makeWASocket({
         auth: state,
@@ -1327,13 +1297,8 @@ export class BaileysManager {
   }
 
   private async restoreSession(dbSession: any) {
-    const sessionDir = path.join(process.cwd(), 'sessions', dbSession.id);
-
     try {
-      // Check if session directory exists
-      await fs.access(sessionDir);
-
-      // Try to restore the session
+      // Restore the session from database-backed auth state
       await this.createSession(dbSession.id, dbSession.organizationId);
     } catch (error) {
       throw new Error(
@@ -1529,18 +1494,12 @@ export class BaileysManager {
       this.fastify.log.info(`Database deletion result for session ${sessionId}:`, deleteResult);
 
       // Delete auth directories if they exist
-      const authDirs = [
-        path.join(process.cwd(), 'baileys_auth', sessionId),
-        path.join(process.cwd(), 'sessions', sessionId),
-      ];
-
-      for (const authDir of authDirs) {
-        try {
-          await fs.rm(authDir, { recursive: true, force: true });
-          this.fastify.log.info(`Deleted auth directory: ${authDir}`);
-        } catch (error) {
-          this.fastify.log.warn(`Failed to delete auth directory ${authDir}:`, error);
-        }
+      // Delete auth state from database
+      try {
+        await db.delete(baileysAuthState).where(eq(baileysAuthState.sessionId, sessionId));
+        this.fastify.log.info(`Deleted auth state from database for session ${sessionId}`);
+      } catch (error) {
+        this.fastify.log.warn(`Failed to delete auth state for session ${sessionId}:`, error);
       }
 
       // Publish deletion event
@@ -1682,6 +1641,58 @@ export class BaileysManager {
       return result;
     } catch (error) {
       this.fastify.log.error(`Failed to ingest account.deleted event:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Generate a pairing code for a session
+   * User can use this code instead of scanning QR code
+   */
+  async generatePairingCode(sessionId: string, organizationId: string): Promise<string> {
+    const sessionKey = `${organizationId}:${sessionId}`;
+    const session = this.sessions.get(sessionKey);
+
+    if (!session) {
+      throw new Error(`Session ${sessionId} not found`);
+    }
+
+    if (!session.socket) {
+      throw new Error(`Socket not initialized for session ${sessionId}`);
+    }
+
+    try {
+      this.fastify.log.info(`Requesting pairing code for session ${sessionId}`);
+
+      // For v7, wait a moment to ensure socket is fully initialized
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      // Request pairing code from socket
+      const pairingCode = await (session.socket as any).requestPairingCode();
+
+      if (!pairingCode) {
+        throw new Error('No pairing code returned from socket');
+      }
+
+      this.fastify.log.info(`Successfully generated pairing code for session ${sessionId}: ${pairingCode}`);
+
+      // Store the pairing code in the session
+      session.pairingCode = pairingCode;
+
+      // Save to database
+      await db
+        .update(whatsappSession)
+        .set({
+          pairingCode,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(eq(whatsappSession.id, sessionId), eq(whatsappSession.organizationId, organizationId))
+        );
+
+      return pairingCode;
+    } catch (error) {
+      this.fastify.log.error(`Failed to generate pairing code for session ${sessionId}:`, error);
       throw error;
     }
   }

@@ -13,6 +13,7 @@ export const whatsappSession = pgTable('whatsapp_session', {
   status: text('status').notNull().default('disconnected'), // disconnected, connecting, connected, qr_required
   sessionBlob: text('session_blob'), // encrypted session data
   qrCode: text('qr_code'),
+  pairingCode: text('pairing_code'), // Numeric code for pairing without QR
   lastActive: timestamp('last_active'),
   
   // Settings

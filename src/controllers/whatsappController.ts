@@ -148,6 +148,7 @@ export async function getWhatsAppSession(request: FastifyRequest, reply: Fastify
       status: session.status === 'connected' ? 'connected' : 'disconnected',
       lastSeen: session.lastActive,
       createdAt: session.createdAt || new Date().toISOString(),
+      pairingCode: session.pairingCode || null,
     });
   } catch (error) {
     request.log.error(
@@ -183,6 +184,7 @@ export async function listWhatsAppSessions(request: FastifyRequest, reply: Fasti
         status: session.status, // Return the actual status from the session
         lastSeen: session.lastActive,
         createdAt: session.createdAt || new Date().toISOString(),
+        pairingCode: session.pairingCode || null,
       })),
     });
   } catch (error) {

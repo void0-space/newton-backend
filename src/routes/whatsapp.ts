@@ -108,6 +108,54 @@ const whatsappRoutes: FastifyPluginAsync = async fastify => {
   );
   fastify.get('/connection-status/:sessionId', { preHandler: sessionAuthMiddleware }, getSessionQR);
 
+  // Pairing code generation route
+  fastify.post(
+    '/accounts/:id/generate-pairing-code',
+    { preHandler: sessionAuthMiddleware },
+    async (request: any, reply) => {
+      try {
+        const organizationId = request.organization.id;
+        const { id: sessionId } = request.params;
+
+        // Verify the session belongs to this organization
+        const [session] = await db
+          .select()
+          .from(whatsappSession)
+          .where(
+            and(
+              eq(whatsappSession.id, sessionId),
+              eq(whatsappSession.organizationId, organizationId)
+            )
+          )
+          .limit(1);
+
+        if (!session) {
+          return reply.status(404).send({
+            error: 'Session not found',
+            code: 'SESSION_NOT_FOUND'
+          });
+        }
+
+        // Generate pairing code using BaileysManager
+        const pairingCode = await fastify.baileys.generatePairingCode(sessionId, organizationId);
+
+        return reply.send({
+          success: true,
+          sessionId,
+          pairingCode,
+          message: 'Enter this code in your WhatsApp to complete the connection',
+        });
+      } catch (error) {
+        fastify.log.error('Error generating pairing code:', error);
+        return reply.status(500).send({
+          error: 'Failed to generate pairing code',
+          code: 'PAIRING_CODE_GENERATION_FAILED',
+          message: error instanceof Error ? error.message : 'Unknown error',
+        });
+      }
+    }
+  );
+
   // Group syncing route
   fastify.post(
     '/accounts/:id/sync-groups',
