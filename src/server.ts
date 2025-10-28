@@ -87,6 +87,8 @@ async function start() {
           'https://whatsappgateway.in',
         ];
 
+        fastify.log.info(process.env.CORS_DOMAINS.split(','), 'CORS:');
+
         if (!origin || allowedOrigins.includes(origin)) {
           callback(null, true);
         } else {

@@ -1,5 +1,10 @@
 import { Resend } from 'resend';
 
+// Validate Resend API Key on startup
+if (!process.env.RESEND_API_KEY) {
+  console.error('RESEND_API_KEY environment variable is not set!');
+}
+
 const resend = new Resend(process.env.RESEND_API_KEY);
 
 export interface PasswordResetEmailOptions {
@@ -25,19 +30,30 @@ export async function sendPasswordResetEmail({
   try {
     console.log('Sending password reset email to:', email);
     console.log('From:', process.env.EMAIL_FROM || 'noreply@smartpay.ink');
+    console.log('Resend API Key configured:', !!process.env.RESEND_API_KEY);
+    console.log('Resend API Key starts with:', process.env.RESEND_API_KEY?.substring(0, 10) + '...');
 
-    const result = await resend.emails.send({
+    const emailPayload = {
       from: process.env.EMAIL_FROM || 'noreply@smartpay.ink',
       to: email,
       subject: 'Reset Your Password',
       html: generatePasswordResetTemplate(resetLink, userName),
+    };
+
+    console.log('Email payload (without HTML):', {
+      from: emailPayload.from,
+      to: emailPayload.to,
+      subject: emailPayload.subject,
     });
 
-    console.log('Resend API response:', result);
+    const result = await resend.emails.send(emailPayload);
+
+    console.log('Resend API response:', JSON.stringify(result, null, 2));
     return result;
   } catch (error) {
     console.error('Error sending password reset email:', error);
     if (error instanceof Error) {
+      console.error('Error name:', error.name);
       console.error('Error message:', error.message);
       console.error('Error stack:', error.stack);
     }

@@ -113,70 +113,20 @@ export async function sendMessage(request: FastifyRequest, reply: FastifyReply) 
 
     const session = connectedSession;
 
+    // Check if session is connected - return error immediately if not
     if (!session.socket || session.status !== 'connected') {
       request.log.info(
-        `API: Session ${session.id} not connected (Status: ${session.status}). Attempting to reconnect...`
+        `API: Session ${session.id} not connected (Status: ${session.status}).`
       );
 
-      try {
-        // Attempt to reconnect the session
-        await request.server.baileys.reconnectSession(session.id, organizationId);
-
-        // Wait for connection with polling - up to 15 seconds
-        let isConnected = false;
-        let attempts = 0;
-        const maxAttempts = 30; // 30 attempts * 500ms = 15 seconds
-
-        while (attempts < maxAttempts && !isConnected) {
-          await new Promise(resolve => setTimeout(resolve, 500));
-
-          const updatedSession = await request.server.baileys.getSession(session.id, organizationId);
-
-          if (updatedSession?.status === 'connected') {
-            isConnected = true;
-            session.socket = updatedSession.socket;
-            session.status = updatedSession.status;
-            request.log.info(`API: Successfully reconnected session ${session.id} after ${(attempts + 1) * 500}ms`);
-            break;
-          } else if (updatedSession?.status === 'qr_required') {
-            return reply.status(400).send({
-              error:
-                'WhatsApp session requires QR code scanning. Please scan the QR code in the admin panel to connect.',
-              code: 'QR_SCAN_REQUIRED',
-              sessionId: session.id,
-              currentStatus: updatedSession.status,
-              qrCode: updatedSession?.qrCode,
-            });
-          }
-
-          attempts++;
-        }
-
-        if (!isConnected) {
-          const finalSession = await request.server.baileys.getSession(session.id, organizationId);
-          const currentStatus = finalSession?.status || 'unknown';
-
-          request.log.error(
-            `API: Failed to reconnect session ${session.id}. Status: ${currentStatus} after ${attempts * 500}ms`
-          );
-
-          return reply.status(503).send({
-            error:
-              'WhatsApp session could not be connected. Please check the session status and try again.',
-            code: 'SESSION_CONNECTION_FAILED',
-            sessionId: session.id,
-            currentStatus: currentStatus,
-          });
-        }
-      } catch (reconnectError) {
-        request.log.error(reconnectError, `API: Error reconnecting session ${session.id}:`);
-        return reply.status(503).send({
-          error: 'Failed to reconnect WhatsApp session',
-          code: 'RECONNECTION_FAILED',
-          sessionId: session.id,
-          details: reconnectError instanceof Error ? reconnectError.message : 'Unknown error',
-        });
-      }
+      // Return current status without trying to reconnect
+      return reply.status(503).send({
+        error:
+          'WhatsApp session is not connected. Please connect the WhatsApp account from the dashboard before sending messages.',
+        code: 'SESSION_NOT_CONNECTED',
+        sessionId: session.id,
+        currentStatus: session.status,
+      });
     }
 
     request.log.info('API: Session is connected, preparing to send message');
