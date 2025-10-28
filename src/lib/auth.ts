@@ -4,6 +4,7 @@ import { admin, apiKey, organization } from 'better-auth/plugins';
 import { db } from '../db/drizzle';
 import { inferAdditionalFields } from 'better-auth/client/plugins';
 import * as schema from '../db/schema';
+import { sendPasswordResetEmail } from '../services/emailService';
 
 export const auth = betterAuth({
   database: drizzleAdapter(db, {
@@ -12,6 +13,32 @@ export const auth = betterAuth({
   emailAndPassword: {
     enabled: true,
     requireEmailVerification: false, // Set to true in production
+    sendResetPassword: async ({ user, url, token }, request) => {
+      try {
+        console.log('=== PASSWORD RESET EMAIL TRIGGER ===');
+        console.log('User email:', user.email);
+        console.log('Token:', token);
+        console.log('Resend API Key present:', !!process.env.RESEND_API_KEY);
+        console.log('Email From:', process.env.EMAIL_FROM);
+
+        // Construct the reset link using the frontend APP_URL
+        const appUrl = process.env.APP_URL || 'http://localhost:3000';
+        const resetLink = `${appUrl}/reset-password?token=${encodeURIComponent(token)}&email=${encodeURIComponent(user.email)}`;
+
+        console.log('Reset link to send:', resetLink);
+
+        const result = await sendPasswordResetEmail({
+          email: user.email,
+          resetLink,
+          userName: user.name || 'User',
+        });
+
+        console.log('Email sent successfully:', result);
+      } catch (error) {
+        console.error('Error sending password reset email:', error);
+        throw error;
+      }
+    },
   },
   socialProviders: {
     google: {

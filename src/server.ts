@@ -272,7 +272,6 @@ async function start() {
         try {
           // Construct request URL
           const url = new URL(request.url, fastify.config.BETTER_AUTH_URL);
-          fastify.log.info(`AUTH HANDLER HIT: ${request.method} ${request.url}: ${url}`);
 
           // Convert Fastify headers to standard Headers object
           const headers = new Headers();
@@ -284,7 +283,7 @@ async function start() {
           const req = new Request(url.toString(), {
             method: request.method,
             headers,
-            body: request.body ? JSON.stringify(request.body) : null,
+            body: request.body ? JSON.stringify(request.body) : undefined,
           });
 
           // Process authentication request
