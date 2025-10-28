@@ -24,10 +24,10 @@ export async function sendPasswordResetEmail({
 }: PasswordResetEmailOptions) {
   try {
     console.log('Sending password reset email to:', email);
-    console.log('From:', process.env.EMAIL_FROM || 'noreply@whatsappgateway.in');
+    console.log('From:', process.env.EMAIL_FROM || 'noreply@smartpay.ink');
 
     const result = await resend.emails.send({
-      from: process.env.EMAIL_FROM || 'noreply@whatsappgateway.in',
+      from: process.env.EMAIL_FROM || 'noreply@smartpay.ink',
       to: email,
       subject: 'Reset Your Password',
       html: generatePasswordResetTemplate(resetLink, userName),
@@ -55,7 +55,7 @@ export async function sendVerificationEmail({
 }: EmailVerificationOptions) {
   try {
     const result = await resend.emails.send({
-      from: process.env.EMAIL_FROM || 'noreply@whatsappgateway.in',
+      from: process.env.EMAIL_FROM || 'noreply@smartpay.ink',
       to: email,
       subject: 'Verify Your Email Address',
       html: generateVerificationTemplate(verificationLink, userName),
@@ -74,7 +74,7 @@ export async function sendVerificationEmail({
 export async function sendWelcomeEmail(email: string, userName: string = 'User') {
   try {
     const result = await resend.emails.send({
-      from: process.env.EMAIL_FROM || 'noreply@whatsappgateway.in',
+      from: process.env.EMAIL_FROM || 'noreply@smartpay.ink',
       to: email,
       subject: 'Welcome to Newton WhatsApp Gateway',
       html: generateWelcomeTemplate(userName),

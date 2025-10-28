@@ -17,6 +17,7 @@ declare namespace NodeJS {
     WEBHOOK_URL?: string;
     API_PORT?: string;
     CORS_DOMAINS: string;
+    APP_DOMAIN: string;
     [key: string]: string | undefined;
   }
 }

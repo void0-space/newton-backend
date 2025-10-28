@@ -168,7 +168,7 @@ const whatsappRoutes: FastifyPluginAsync = async fastify => {
         'Content-Type': 'text/event-stream',
         'Cache-Control': 'no-cache',
         Connection: 'keep-alive',
-        'Access-Control-Allow-Origin': 'https://whatsappgateway.in',
+        'Access-Control-Allow-Origin': process.env.CORS_DOMAINS.split(','),
         'Access-Control-Allow-Credentials': 'true',
         'Access-Control-Allow-Headers': 'Cache-Control',
       });

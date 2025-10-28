@@ -77,7 +77,7 @@ export const auth = betterAuth({
   advanced: {
     crossSubDomainCookies: {
       enabled: process.env['NODE_ENV'] === 'production',
-      domain: 'whatsappgateway.in', // your domain
+      domain: process.env['APP_DOMAIN'], // your domain
     },
     useSecureCookies: true,
   },
