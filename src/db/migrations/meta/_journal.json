@@ -5,22 +5,8 @@
     {
       "idx": 0,
       "version": "7",
-      "when": 1761577009592,
-      "tag": "0000_square_warstar",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "7",
-      "when": 1761643579402,
-      "tag": "0001_silky_purple_man",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "7",
-      "when": 1761646244600,
-      "tag": "0002_bent_reavers",
+      "when": 1761657753966,
+      "tag": "0000_premium_bromley",
       "breakpoints": true
     }
   ]

@@ -224,6 +224,13 @@ CREATE TABLE "auto_reply_usage" (
 	"updated_at" timestamp DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
+CREATE TABLE "baileys_auth_state" (
+	"ns" text PRIMARY KEY NOT NULL,
+	"creds" jsonb NOT NULL,
+	"keys" jsonb NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
 CREATE TABLE "campaign_messages" (
 	"id" text PRIMARY KEY NOT NULL,
 	"campaign_id" text NOT NULL,
@@ -418,6 +425,7 @@ CREATE TABLE "whatsapp_session" (
 	"status" text DEFAULT 'disconnected' NOT NULL,
 	"session_blob" text,
 	"qr_code" text,
+	"pairing_code" text,
 	"last_active" timestamp,
 	"always_show_online" boolean DEFAULT true,
 	"auto_reject_calls" boolean DEFAULT false,

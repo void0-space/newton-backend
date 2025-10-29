@@ -22,7 +22,7 @@ import { encryptData } from '../utils/crypto';
 import { createId } from '@paralleldrive/cuid2';
 import { WebhookService } from './webhookService';
 import { AutoReplyService } from './autoReplyService';
-import { useDbAuthState } from '../utils/dbAuthState';
+import { createDrizzleAuthState } from '../utils/drizzleAuthState';
 
 export interface BaileysSession {
   id: string;
@@ -68,7 +68,8 @@ export class BaileysManager {
       }
 
       // Initialize auth state from database
-      const { state, saveCreds } = await useDbAuthState(sessionId, this.fastify.log);
+      const ns = `baileys:${sessionId}`;
+      const auth = await createDrizzleAuthState(ns, this.fastify.log);
 
       const session: BaileysSession = {
         id: sessionId,
@@ -84,7 +85,7 @@ export class BaileysManager {
 
       // Create WhatsApp socket
       const socket = makeWASocket({
-        auth: state,
+        auth,
         logger: this.fastify.log,
         browser: Browsers.macOS('Desktop'),
         // V7 simplified config - removed legacy options
@@ -111,7 +112,7 @@ export class BaileysManager {
       });
 
       // Handle credentials update
-      socket.ev.on('creds.update', saveCreds);
+      socket.ev.on('creds.update', auth.saveCreds);
 
       // Handle messages
       socket.ev.on('messages.upsert', messageUpdate => {
@@ -735,10 +736,11 @@ export class BaileysManager {
     }
 
     try {
-      const { state, saveCreds } = await useDbAuthState(sessionId, this.fastify.log);
+      const ns = `baileys:${sessionId}`;
+      const auth = await createDrizzleAuthState(ns, this.fastify.log);
 
       const socket = makeWASocket({
-        auth: state,
+        auth,
         logger: this.fastify.log,
         browser: Browsers.macOS('Desktop'),
         // V7 simplified config
@@ -758,7 +760,7 @@ export class BaileysManager {
           this.fastify.log.error('Error in handleConnectionUpdate:', err)
         );
       });
-      socket.ev.on('creds.update', saveCreds);
+      socket.ev.on('creds.update', auth.saveCreds);
       socket.ev.on('messages.upsert', messageUpdate =>
         this.handleMessages(sessionContext, messageUpdate).catch(err =>
           this.fastify.log.error('Error in handleMessages:', err)

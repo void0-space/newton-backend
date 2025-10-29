@@ -8,63 +8,77 @@ import path from 'path';
 import fs from 'fs';
 
 /**
- * Recursively serialize Buffers to base64 for JSON storage
+ * Recursively serialize all Buffers and TypedArrays to base64
+ * This replacer visits EVERY value in the object tree
  */
-function serializeCredentials(creds: AuthenticationCreds): any {
-  if (Buffer.isBuffer(creds)) {
-    return { __buffer: creds.toString('base64') };
+function serializeBuffers(_key: string, value: any): any {
+  if (Buffer.isBuffer(value)) {
+    return {
+      __type: 'Buffer',
+      __data: value.toString('base64'),
+    };
   }
-
-  if (creds === null || creds === undefined) {
-    return creds;
+  // Handle all ArrayBuffer views (Uint8Array, etc)
+  if (ArrayBuffer.isView(value) && !(value instanceof DataView)) {
+    return {
+      __type: 'Uint8Array',
+      __data: Buffer.from(value as Uint8Array).toString('base64'),
+    };
   }
-
-  if (Array.isArray(creds)) {
-    return creds.map(item => serializeCredentials(item));
-  }
-
-  if (typeof creds === 'object') {
-    const serialized: any = {};
-    for (const [key, value] of Object.entries(creds)) {
-      serialized[key] = serializeCredentials(value);
-    }
-    return serialized;
-  }
-
-  return creds;
+  return value;
 }
 
 /**
- * Recursively deserialize base64 strings back to Buffers
+ * Recursively restore all Buffer markers back to Buffer instances
+ * Walks the entire object tree AFTER JSON.parse to ensure nothing is missed
  */
-function deserializeCredentials(data: any): any {
-  if (data && typeof data === 'object' && data.__buffer && typeof data.__buffer === 'string') {
-    return Buffer.from(data.__buffer, 'base64');
+function restoreBuffers(obj: any): any {
+  if (obj === null || obj === undefined) {
+    return obj;
   }
 
-  if (data === null || data === undefined) {
-    return data;
+  // If this is a Buffer marker, convert it back
+  if (
+    obj &&
+    typeof obj === 'object' &&
+    obj.__type === 'Buffer' &&
+    typeof obj.__data === 'string'
+  ) {
+    return Buffer.from(obj.__data, 'base64');
   }
 
-  if (Array.isArray(data)) {
-    return data.map(item => deserializeCredentials(item));
+  // If this is a Uint8Array marker, convert it back
+  if (
+    obj &&
+    typeof obj === 'object' &&
+    obj.__type === 'Uint8Array' &&
+    typeof obj.__data === 'string'
+  ) {
+    return new Uint8Array(Buffer.from(obj.__data, 'base64'));
   }
 
-  if (typeof data === 'object') {
-    const deserialized: any = {};
-    for (const [key, value] of Object.entries(data)) {
-      deserialized[key] = deserializeCredentials(value);
+  // If it's an array, process each element
+  if (Array.isArray(obj)) {
+    return obj.map(item => restoreBuffers(item));
+  }
+
+  // If it's an object, recursively process all properties
+  if (typeof obj === 'object') {
+    const restored: any = {};
+    for (const [key, value] of Object.entries(obj)) {
+      restored[key] = restoreBuffers(value);
     }
-    return deserialized;
+    return restored;
   }
 
-  return data;
+  // Primitive values pass through unchanged
+  return obj;
 }
 
 /**
  * Database-backed authentication state for Baileys
- * Critical for Railway: Loads credentials from DB on startup to prevent key sync errors
- * Properly handles Buffer serialization/deserialization
+ * Properly persists credentials across Railway deployments
+ * Uses aggressive Buffer serialization/deserialization
  */
 export async function useDbAuthState(sessionId: string, logger?: FastifyInstance['log']) {
   const log = logger || { info: console.log, error: console.error, warn: console.warn };
@@ -73,8 +87,7 @@ export async function useDbAuthState(sessionId: string, logger?: FastifyInstance
 
   const sessionDir = path.join(process.cwd(), 'sessions', sessionId);
 
-  // CRITICAL: Check database for existing credentials FIRST
-  // This prevents "Key used already" errors when session directory is lost (Railway restart)
+  // CRITICAL: Try to load credentials from database first
   let dbCreds: AuthenticationCreds | null = null;
   try {
     const existing = await db.query.baileysAuthState.findFirst({
@@ -83,60 +96,61 @@ export async function useDbAuthState(sessionId: string, logger?: FastifyInstance
 
     if (existing && existing.creds) {
       try {
+        // Parse JSON first
         const parsed = JSON.parse(existing.creds);
-        // Deserialize buffers from base64
-        const deserialized = deserializeCredentials(parsed);
+        // Then recursively restore ALL Buffers
+        const restored = restoreBuffers(parsed);
 
-        // Only load if we have real credentials (not empty object)
-        if (deserialized && Object.keys(deserialized).length > 0) {
-          dbCreds = deserialized;
-          log.info(`[useDbAuthState] LOADED credentials from DB for session ${sessionId} - fields: ${Object.keys(dbCreds).join(', ')}`);
+        // Validate we have real credentials
+        if (restored && Object.keys(restored).length > 0) {
+          dbCreds = restored;
+          log.info(`[useDbAuthState] ✅ LOADED credentials from database for session ${sessionId}`);
+          log.info(`[useDbAuthState] Credential fields: ${Object.keys(dbCreds).join(', ')}`);
         }
       } catch (parseErr) {
-        log.warn(`[useDbAuthState] Failed to parse DB credentials:`, parseErr);
+        log.warn(`[useDbAuthState] Failed to parse database credentials:`, parseErr);
       }
     }
   } catch (error) {
     log.error(`[useDbAuthState] Error loading from database:`, error);
   }
 
-  // If we have DB credentials and session dir exists, clear it to avoid conflicts
+  // If we have database credentials, clear session directory to use them
   if (dbCreds && fs.existsSync(sessionDir)) {
-    log.info(`[useDbAuthState] Clearing session directory to use restored DB credentials`);
+    log.info(`[useDbAuthState] Clearing session directory to use restored credentials`);
     try {
       fs.rmSync(sessionDir, { recursive: true, force: true });
     } catch (err) {
-      log.warn(`[useDbAuthState] Failed to clear session dir:`, err);
+      log.warn(`[useDbAuthState] Failed to clear session directory:`, err);
     }
   }
 
-  // Load multifile auth state
+  // Initialize multifile auth state
   const multiFileAuth = await useMultiFileAuthState(sessionDir);
 
-  // CRITICAL: If we have DB credentials, restore them NOW before socket creation
-  // This ensures session state matches what WhatsApp expects
+  // If we have database credentials, restore them into the session
   if (dbCreds) {
-    log.info(`[useDbAuthState] Restoring credentials from DB into session state`);
-    // Replace the empty multifile credentials with our DB credentials
+    log.info(`[useDbAuthState] Restoring database credentials into session state`);
     Object.assign(multiFileAuth.state.creds, dbCreds);
-    // Also save back to multifile to ensure consistency
+    // Also save back to multifile
     await multiFileAuth.saveCreds(dbCreds);
+    log.info(`[useDbAuthState] ✅ Successfully restored credentials from database`);
   }
 
-  log.info(`[useDbAuthState] Session state ready. Creds fields: ${Object.keys(multiFileAuth.state.creds).join(', ') || 'empty'}`);
+  log.info(`[useDbAuthState] Session initialized. Creds fields: ${Object.keys(multiFileAuth.state.creds).join(', ') || 'empty'}`);
 
-  // Wrap saveCreds to sync to database
+  // Wrap saveCreds to persist to database
   const originalSaveCreds = multiFileAuth.saveCreds;
   const saveCreds = async (update: Partial<AuthenticationCreds>) => {
-    // First save to multifile (handles session files)
+    // First save to multifile
     await originalSaveCreds(update);
 
-    // Then sync to database for disaster recovery
+    // Then persist to database with proper Buffer serialization
     try {
       const creds = multiFileAuth.state.creds;
-      // Serialize buffers to base64 before storing
-      const serialized = serializeCredentials(creds);
-      const credsJson = JSON.stringify(serialized);
+
+      // Use replacer to convert all Buffers to base64
+      const credsJson = JSON.stringify(creds, serializeBuffers);
 
       const existing = await db.query.baileysAuthState.findFirst({
         where: eq(baileysAuthState.sessionId, sessionId),
@@ -151,6 +165,7 @@ export async function useDbAuthState(sessionId: string, logger?: FastifyInstance
             updatedAt: new Date(),
           })
           .where(eq(baileysAuthState.sessionId, sessionId));
+        log.info(`[useDbAuthState] Persisted credentials update to database`);
       } else {
         await db.insert(baileysAuthState).values({
           id: createId(),
@@ -160,15 +175,15 @@ export async function useDbAuthState(sessionId: string, logger?: FastifyInstance
           createdAt: new Date(),
           updatedAt: new Date(),
         });
+        log.info(`[useDbAuthState] Created credentials record in database`);
       }
-
-      log.info(`[useDbAuthState] Synced credentials to database`);
     } catch (error) {
-      log.error(`[useDbAuthState] Error syncing to database:`, error);
-      // Don't throw - continue even if DB sync fails
+      log.error(`[useDbAuthState] Error persisting to database:`, error);
+      // Don't throw - let connection continue
     }
   };
 
+  log.info(`[useDbAuthState] Auth state ready for session ${sessionId}`);
   return {
     state: multiFileAuth.state,
     saveCreds,

@@ -1,5 +1,5 @@
 {
-  "id": "1cf40008-35b5-4708-b824-ef1d94a57a7f",
+  "id": "e78eb5bf-07cc-4c28-b2f5-22dd118dad2d",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -1694,6 +1694,44 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.baileys_auth_state": {
+      "name": "baileys_auth_state",
+      "schema": "",
+      "columns": {
+        "ns": {
+          "name": "ns",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "creds": {
+          "name": "creds",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "keys": {
+          "name": "keys",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.campaign_messages": {
       "name": "campaign_messages",
       "schema": "",
@@ -3059,6 +3097,12 @@
         },
         "qr_code": {
           "name": "qr_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "pairing_code": {
+          "name": "pairing_code",
           "type": "text",
           "primaryKey": false,
           "notNull": false
