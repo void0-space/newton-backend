@@ -159,6 +159,21 @@ export class BaileysManager {
       // Save initial session to database
       await this.saveSessionToDb(session);
 
+      // For restored sessions with existing credentials, trigger auto-reconnection if needed
+      // After socket creation, wait for connection events. If not connected within timeout, trigger manual reconnect
+      setTimeout(() => {
+        const currentSession = this.sessions.get(sessionKey);
+        if (currentSession && currentSession.socket && currentSession.status === 'connecting') {
+          this.fastify.log.info(
+            `Session ${sessionId} still connecting after initialization - triggering explicit reconnection attempt`
+          );
+          // Force reconnection attempt for restored sessions
+          this.recreateSocket(sessionContext).catch(err =>
+            this.fastify.log.error(`Failed to reconnect restored session ${sessionId}:`, err)
+          );
+        }
+      }, 8000);
+
       return session;
     } catch (error) {
       this.fastify.log.error(error, `Failed to create session ${sessionId}:`);
