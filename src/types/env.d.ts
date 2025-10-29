@@ -18,6 +18,7 @@ declare namespace NodeJS {
     API_PORT?: string;
     CORS_DOMAINS: string;
     APP_DOMAIN: string;
+    APP_URL: string;
     [key: string]: string | undefined;
   }
 }

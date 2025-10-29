@@ -12,6 +12,7 @@ import {
   isJidNewsletter,
   isJidStatusBroadcast,
   isJidMetaAI,
+  jidNormalizedUser,
 } from '@whiskeysockets/baileys';
 import QRCode from 'qrcode';
 import { FastifyInstance } from 'fastify';
@@ -23,6 +24,7 @@ import { createId } from '@paralleldrive/cuid2';
 import { WebhookService } from './webhookService';
 import { AutoReplyService } from './autoReplyService';
 import { createDrizzleAuthState } from '../utils/drizzleAuthState';
+import PQueue from 'p-queue';
 
 export interface BaileysSession {
   id: string;
@@ -53,11 +55,31 @@ export class BaileysManager {
   private webhookService: WebhookService;
   private autoReplyService: AutoReplyService;
 
+  // Per-JID message processing queues to prevent Signal protocol race conditions
+  // Key format: "sessionId:normalizedJid"
+  private perJidQueue: Map<string, PQueue> = new Map();
+
   constructor(fastify: FastifyInstance) {
     this.fastify = fastify;
     this.webhookService = new WebhookService(fastify);
     this.autoReplyService = new AutoReplyService();
     this.autoReplyService.setBaileysManager(this);
+  }
+
+  /**
+   * Get or create a queue for a specific JID within a session
+   * Ensures serialized message processing from the same sender
+   */
+  private getQueueFor(sessionId: string, jid: string): PQueue {
+    const normalizedJid = jidNormalizedUser(jid);
+    const queueKey = `${sessionId}:${normalizedJid}`;
+
+    if (!this.perJidQueue.has(queueKey)) {
+      // Concurrency of 1 ensures messages from same JID are processed sequentially
+      this.perJidQueue.set(queueKey, new PQueue({ concurrency: 1 }));
+    }
+
+    return this.perJidQueue.get(queueKey)!;
   }
 
   async createSession(sessionId: string, organizationId: string): Promise<BaileysSession> {
@@ -114,14 +136,28 @@ export class BaileysManager {
       // Handle credentials update
       socket.ev.on('creds.update', auth.saveCreds);
 
-      // Handle messages
+      // Handle messages with per-JID serialization to prevent Signal protocol race conditions
       socket.ev.on('messages.upsert', messageUpdate => {
         this.fastify.log.info(
           `🚀 messages.upsert event fired for session ${sessionId}!: ${JSON.stringify(messageUpdate.messages)}`
         );
-        this.handleMessages(sessionContext, messageUpdate).catch(err =>
-          this.fastify.log.error('Error in handleMessages:', err)
-        );
+
+        // Process messages grouped by sender JID to maintain Signal protocol state consistency
+        for (const msg of messageUpdate.messages) {
+          const senderJid = msg.key.remoteJid;
+          if (senderJid) {
+            const queue = this.getQueueFor(sessionId, senderJid);
+            queue.add(async () => {
+              try {
+                await this.handleMessages(sessionContext, { messages: [msg], type: messageUpdate.type });
+              } catch (err) {
+                this.fastify.log.error(`Error processing message from ${senderJid} in session ${sessionId}:`, err);
+              }
+            }).catch(err =>
+              this.fastify.log.error('Error queuing message:', err)
+            );
+          }
+        }
       });
 
       // Handle message status updates
@@ -776,11 +812,24 @@ export class BaileysManager {
         );
       });
       socket.ev.on('creds.update', auth.saveCreds);
-      socket.ev.on('messages.upsert', messageUpdate =>
-        this.handleMessages(sessionContext, messageUpdate).catch(err =>
-          this.fastify.log.error('Error in handleMessages:', err)
-        )
-      );
+      // Handle messages with per-JID serialization to prevent Signal protocol race conditions
+      socket.ev.on('messages.upsert', messageUpdate => {
+        for (const msg of messageUpdate.messages) {
+          const senderJid = msg.key.remoteJid;
+          if (senderJid) {
+            const queue = this.getQueueFor(sessionId, senderJid);
+            queue.add(async () => {
+              try {
+                await this.handleMessages(sessionContext, { messages: [msg], type: messageUpdate.type });
+              } catch (err) {
+                this.fastify.log.error(`Error processing message from ${senderJid} in session ${sessionId}:`, err);
+              }
+            }).catch(err =>
+              this.fastify.log.error('Error queuing message:', err)
+            );
+          }
+        }
+      });
       socket.ev.on('messages.update', updates =>
         this.handleMessageUpdates(sessionContext, updates).catch(err =>
           this.fastify.log.error('Error in handleMessageUpdates:', err)

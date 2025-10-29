@@ -12,6 +12,29 @@ import { FastifyInstance } from 'fastify';
 type KeyStore = { [T in keyof SignalDataTypeMap]?: Record<string, SignalDataTypeMap[T]> };
 
 /**
+ * Simple mutex for async operations
+ * Ensures key store updates are atomic and not concurrent
+ */
+class AsyncMutex {
+  private locked = false;
+  private queue: Array<() => void> = [];
+
+  async lock<T>(fn: () => Promise<T>): Promise<T> {
+    while (this.locked) {
+      await new Promise(resolve => this.queue.push(resolve));
+    }
+    this.locked = true;
+    try {
+      return await fn();
+    } finally {
+      this.locked = false;
+      const resolve = this.queue.shift();
+      if (resolve) resolve();
+    }
+  }
+}
+
+/**
  * Create a Drizzle-backed authentication state for Baileys
  * Uses JSONB columns and Baileys' own BufferJSON for serialization
  */
@@ -98,9 +121,14 @@ export async function createDrizzleAuthState(
   const { creds, keys } = await load();
   const keyStore: KeyStore = keys || {};
 
+  // Mutex for atomic key store operations
+  const keyStoreMutex = new AsyncMutex();
+
   // Wrap all persistence
   async function saveAll() {
-    await persist({ creds, keys: keyStore });
+    await keyStoreMutex.lock(async () => {
+      await persist({ creds, keys: keyStore });
+    });
   }
 
   log.info(`[drizzleAuthState] Auth state ready. Creds fields: ${Object.keys(creds).join(', ') || 'empty'}`);
@@ -109,20 +137,24 @@ export async function createDrizzleAuthState(
     creds,
     keys: {
       get: async (type, ids) => {
-        const map = keyStore[type] || {};
-        const out: any = {};
-        for (const id of ids) {
-          out[id] = map[id];
-        }
-        return out;
+        return keyStoreMutex.lock(async () => {
+          const map = keyStore[type] || {};
+          const out: any = {};
+          for (const id of ids) {
+            out[id] = map[id];
+          }
+          return out;
+        });
       },
       set: async (data) => {
-        for (const _type in data) {
-          const type = _type as keyof SignalDataTypeMap;
-          keyStore[type] = keyStore[type] || {};
-          Object.assign(keyStore[type]!, data[type]!);
-        }
-        await saveAll();
+        return keyStoreMutex.lock(async () => {
+          for (const _type in data) {
+            const type = _type as keyof SignalDataTypeMap;
+            keyStore[type] = keyStore[type] || {};
+            Object.assign(keyStore[type]!, data[type]!);
+          }
+          await persist({ creds, keys: keyStore });
+        });
       },
     },
     saveCreds: saveAll,

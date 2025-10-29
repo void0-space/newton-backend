@@ -132,7 +132,7 @@ const whatsappRoutes: FastifyPluginAsync = async fastify => {
         if (!session) {
           return reply.status(404).send({
             error: 'Session not found',
-            code: 'SESSION_NOT_FOUND'
+            code: 'SESSION_NOT_FOUND',
           });
         }
 
@@ -216,7 +216,7 @@ const whatsappRoutes: FastifyPluginAsync = async fastify => {
         'Content-Type': 'text/event-stream',
         'Cache-Control': 'no-cache',
         Connection: 'keep-alive',
-        'Access-Control-Allow-Origin': process.env.CORS_DOMAINS.split(','),
+        'Access-Control-Allow-Origin': process.env.APP_URL,
         'Access-Control-Allow-Credentials': 'true',
         'Access-Control-Allow-Headers': 'Cache-Control',
       });
