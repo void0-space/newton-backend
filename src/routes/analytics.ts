@@ -6,7 +6,7 @@ import { eq, desc, and, gte, lte, like, sql, count, avg, max, min, sum } from 'd
 import { auth } from '../lib/auth';
 import { convertHeaders } from '../utils/header';
 
-const analyticsRoutes: FastifyPluginAsync = async (fastify) => {
+const analyticsRoutes: FastifyPluginAsync = async fastify => {
   // Session-based authentication middleware
   const sessionAuthMiddleware = async (request: FastifyRequest, reply: any) => {
     try {
@@ -17,7 +17,7 @@ const analyticsRoutes: FastifyPluginAsync = async (fastify) => {
       const session = await auth.api.getSession({ headers });
 
       request.log.info(
-        `Analytics: Session data: ${JSON.stringify({
+        `Analytics: Session dataaa: ${JSON.stringify({
           hasSession: !!session?.session,
           hasActiveOrg: !!session?.session?.activeOrganizationId,
           activeOrganizationId: session?.session?.activeOrganizationId,
@@ -219,10 +219,12 @@ const analyticsRoutes: FastifyPluginAsync = async (fastify) => {
     try {
       const organizationId = (request as any).organization.id;
 
-      const query = z.object({
-        dateFrom: z.string().optional(),
-        dateTo: z.string().optional(),
-      }).parse(request.query);
+      const query = z
+        .object({
+          dateFrom: z.string().optional(),
+          dateTo: z.string().optional(),
+        })
+        .parse(request.query);
 
       const conditions = [eq(apiUsage.organizationId, organizationId)];
 
@@ -328,10 +330,7 @@ const analyticsRoutes: FastifyPluginAsync = async (fastify) => {
         })
         .from(apiUsage)
         .where(
-          and(
-            eq(apiUsage.organizationId, organizationId),
-            sql`${apiUsage.apiKeyId} IS NOT NULL`
-          )
+          and(eq(apiUsage.organizationId, organizationId), sql`${apiUsage.apiKeyId} IS NOT NULL`)
         );
 
       return reply.send({
