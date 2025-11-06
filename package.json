@@ -55,6 +55,7 @@
     "qrcode": "^1.5.3",
     "razorpay": "^2.9.4",
     "redis": "^4.7.0",
+    "redlock": "5.0.0-beta.2",
     "resend": "^6.3.0",
     "sharp": "^0.33.5",
     "tus-js-client": "^4.3.1",

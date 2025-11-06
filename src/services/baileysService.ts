@@ -25,6 +25,7 @@ import { WebhookService } from './webhookService';
 import { AutoReplyService } from './autoReplyService';
 import { createDrizzleAuthState } from '../utils/drizzleAuthState';
 import PQueue from 'p-queue';
+import { DistributedLockManager } from '../utils/distributedLock';
 
 export interface BaileysSession {
   id: string;
@@ -55,15 +56,20 @@ export class BaileysManager {
   private webhookService: WebhookService;
   private autoReplyService: AutoReplyService;
 
-  // Per-JID message processing queues to prevent Signal protocol race conditions
+  // Per-JID message processing queues to prevent Signal protocol race conditions within a single instance
   // Key format: "sessionId:normalizedJid"
   private perJidQueue: Map<string, PQueue> = new Map();
+
+  // Distributed lock manager for multi-replica deployments
+  // Ensures only one replica processes messages from the same JID at a time
+  private lockManager: DistributedLockManager;
 
   constructor(fastify: FastifyInstance) {
     this.fastify = fastify;
     this.webhookService = new WebhookService(fastify);
     this.autoReplyService = new AutoReplyService();
     this.autoReplyService.setBaileysManager(this);
+    this.lockManager = new DistributedLockManager(fastify);
   }
 
   /**
@@ -136,7 +142,9 @@ export class BaileysManager {
       // Handle credentials update
       socket.ev.on('creds.update', auth.saveCreds);
 
-      // Handle messages with per-JID serialization to prevent Signal protocol race conditions
+      // Handle messages with distributed + local serialization to prevent Signal protocol race conditions
+      // Distributed lock ensures only one replica processes this JID
+      // Local queue ensures serialization within this replica
       socket.ev.on('messages.upsert', messageUpdate => {
         this.fastify.log.info(
           `🚀 messages.upsert event fired for session ${sessionId}!: ${JSON.stringify(messageUpdate.messages)}`
@@ -148,11 +156,44 @@ export class BaileysManager {
           if (senderJid) {
             const queue = this.getQueueFor(sessionId, senderJid);
             queue.add(async () => {
-              try {
-                await this.handleMessages(sessionContext, { messages: [msg], type: messageUpdate.type });
-              } catch (err) {
-                this.fastify.log.error(`Error processing message from ${senderJid} in session ${sessionId}:`, err);
-              }
+              // Acquire distributed lock to ensure only one replica processes this JID
+              await this.lockManager
+                .withJidLock(senderJid, async () => {
+                  try {
+                    // Accessing msg.message triggers decryption - must be inside the lock
+                    const _content = msg.message;
+                    await this.handleMessages(sessionContext, {
+                      messages: [msg],
+                      type: messageUpdate.type,
+                    });
+                  } catch (err: any) {
+                    // Log but don't surface as 500 - transient pkmsg failures are expected
+                    // Baileys handles retry receipts for known failures
+                    this.fastify.log.warn(
+                      {
+                        err: {
+                          code: err?.code,
+                          message: err?.message,
+                        },
+                        jid: senderJid,
+                        sessionId,
+                        messageId: msg.key.id,
+                      },
+                      'Message decrypt/process failed - will rely on client retry'
+                    );
+                    // Don't rethrow - let the client handle retry
+                  }
+                })
+                .catch(lockErr => {
+                  this.fastify.log.warn(
+                    {
+                      err: lockErr,
+                      jid: senderJid,
+                      sessionId,
+                    },
+                    'Failed to acquire distributed lock for JID - another replica may be processing'
+                  );
+                });
             }).catch(err =>
               this.fastify.log.error('Error queuing message:', err)
             );
@@ -812,18 +853,36 @@ export class BaileysManager {
         );
       });
       socket.ev.on('creds.update', auth.saveCreds);
-      // Handle messages with per-JID serialization to prevent Signal protocol race conditions
+      // Handle messages with distributed + local serialization to prevent Signal protocol race conditions
       socket.ev.on('messages.upsert', messageUpdate => {
         for (const msg of messageUpdate.messages) {
           const senderJid = msg.key.remoteJid;
           if (senderJid) {
             const queue = this.getQueueFor(sessionId, senderJid);
             queue.add(async () => {
-              try {
-                await this.handleMessages(sessionContext, { messages: [msg], type: messageUpdate.type });
-              } catch (err) {
-                this.fastify.log.error(`Error processing message from ${senderJid} in session ${sessionId}:`, err);
-              }
+              await this.lockManager
+                .withJidLock(senderJid, async () => {
+                  try {
+                    const _content = msg.message; // Triggers decryption - must be inside lock
+                    await this.handleMessages(sessionContext, { messages: [msg], type: messageUpdate.type });
+                  } catch (err: any) {
+                    this.fastify.log.warn(
+                      {
+                        err: { code: err?.code, message: err?.message },
+                        jid: senderJid,
+                        sessionId,
+                        messageId: msg.key.id,
+                      },
+                      'Message decrypt/process failed - will rely on client retry'
+                    );
+                  }
+                })
+                .catch(lockErr => {
+                  this.fastify.log.warn(
+                    { err: lockErr, jid: senderJid, sessionId },
+                    'Failed to acquire distributed lock for JID'
+                  );
+                });
             }).catch(err =>
               this.fastify.log.error('Error queuing message:', err)
             );
