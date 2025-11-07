@@ -146,8 +146,9 @@ export class BaileysManager {
       // Distributed lock ensures only one replica processes this JID
       // Local queue ensures serialization within this replica
       socket.ev.on('messages.upsert', messageUpdate => {
-        this.fastify.log.info(
-          `🚀 messages.upsert event fired for session ${sessionId}!: ${JSON.stringify(messageUpdate.messages)}`
+        // Only log message count, not full payload (reduces buffer pressure)
+        this.fastify.log.debug(
+          `🚀 messages.upsert event: ${messageUpdate.messages.length} messages for session ${sessionId}`
         );
 
         // Process messages grouped by sender JID to maintain Signal protocol state consistency
@@ -185,13 +186,9 @@ export class BaileysManager {
                   }
                 })
                 .catch(lockErr => {
-                  this.fastify.log.warn(
-                    {
-                      err: lockErr,
-                      jid: senderJid,
-                      sessionId,
-                    },
-                    'Failed to acquire distributed lock for JID - another replica may be processing'
+                  this.fastify.log.debug(
+                    { jid: senderJid, sessionId },
+                    'Failed to acquire distributed lock - another replica processing'
                   );
                 });
             }).catch(err =>
@@ -203,9 +200,8 @@ export class BaileysManager {
 
       // Handle message status updates
       socket.ev.on('messages.update', updates => {
-        this.fastify.log.info(
-          `🔄 messages.update event fired for session ${sessionId}: ${JSON.stringify(updates)}`
-        );
+        // Only log count, not full payload (reduces buffer pressure)
+        this.fastify.log.debug(`🔄 messages.update: ${updates.length} updates for session ${sessionId}`);
         this.handleMessageUpdates(sessionContext, updates).catch(err =>
           this.fastify.log.error('Error in handleMessageUpdates:', err)
         );
@@ -213,8 +209,9 @@ export class BaileysManager {
 
       // Handle contacts sync
       socket.ev.on('contacts.upsert', contacts => {
-        this.fastify.log.info(
-          `👥 contacts.upsert event fired for session ${sessionId}: ${JSON.stringify(contacts)}`
+        // Only log count, not full payload (reduces buffer pressure)
+        this.fastify.log.debug(
+          `👥 contacts.upsert: ${contacts.length} contacts for session ${sessionId}`
         );
         this.handleContactsUpsert(sessionContext, contacts).catch(err =>
           this.fastify.log.error('Error in handleContactsUpsert:', err)
@@ -225,9 +222,8 @@ export class BaileysManager {
 
       // Handle groups sync
       socket.ev.on('groups.upsert', groups => {
-        this.fastify.log.info(
-          `👫 groups.upsert event fired for session ${sessionId}: ${JSON.stringify(groups)}`
-        );
+        // Only log count, not full payload (reduces buffer pressure)
+        this.fastify.log.debug(`👫 groups.upsert: ${groups.length} groups for session ${sessionId}`);
         this.handleGroupsUpsert(sessionContext, groups).catch(err =>
           this.fastify.log.error('Error in handleGroupsUpsert:', err)
         );
@@ -895,13 +891,13 @@ export class BaileysManager {
         )
       );
       socket.ev.on('contacts.upsert', contacts => {
-        this.fastify.log.info(`👥 contacts.upsert event fired in recreateSocket for ${sessionId}`);
+        this.fastify.log.debug(`👥 contacts.upsert: ${contacts.length} contacts for session ${sessionId}`);
         this.handleContactsUpsert(sessionContext, contacts).catch(err =>
           this.fastify.log.error('Error in handleContactsUpsert:', err)
         );
       });
       socket.ev.on('groups.upsert', groups => {
-        this.fastify.log.info(`👫 groups.upsert event fired in recreateSocket for ${sessionId}`);
+        this.fastify.log.debug(`👫 groups.upsert: ${groups.length} groups for session ${sessionId}`);
         this.handleGroupsUpsert(sessionContext, groups).catch(err =>
           this.fastify.log.error('Error in handleGroupsUpsert:', err)
         );

@@ -37,20 +37,40 @@ import { schedulerService } from './services/schedulerService';
 
 dotenv.config();
 
+const logBufferSize = parseInt(process.env['LOG_BUFFER_SIZE'] || '256000', 10);
+const logFlushInterval = parseInt(process.env['LOG_FLUSH_INTERVAL_MS'] || '2000', 10);
+
 const fastify = Fastify({
   logger:
     process.env['NODE_ENV'] === 'development'
       ? {
           level: 'info',
+          // Pino buffer configuration to prevent "Buffer timeout reached" errors
+          bufferSize: logBufferSize,
+          flushInterval: logFlushInterval,
           transport: {
             target: 'pino-pretty',
             options: {
               translateTime: 'HH:MM:ss Z',
               ignore: 'pid,hostname',
+              // Don't buffer in pino-pretty, let pino handle it
+              singleLine: false,
+              colorize: true,
             },
           },
         }
-      : { level: 'warn' },
+      : {
+          level: 'warn',
+          // Production: larger buffer and faster flush
+          bufferSize: logBufferSize * 2, // 512KB by default
+          flushInterval: logFlushInterval / 2, // 1000ms by default
+        },
+});
+
+console.log('[Logger Configuration]', {
+  bufferSize: logBufferSize,
+  flushInterval: logFlushInterval,
+  nodeEnv: process.env['NODE_ENV'],
 });
 
 async function start() {

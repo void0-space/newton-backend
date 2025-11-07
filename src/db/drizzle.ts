@@ -7,6 +7,25 @@ dotenv.config();
 
 const pool = new Pool({
   connectionString: process.env['DATABASE_URL'],
+  // Connection pool limits to prevent "Connection Closed" errors
+  max: parseInt(process.env['DB_POOL_MAX'] || '20', 10),
+  idleTimeoutMillis: parseInt(process.env['DB_POOL_IDLE_TIMEOUT_MS'] || '30000', 10),
+  connectionTimeoutMillis: parseInt(process.env['DB_POOL_CONNECTION_TIMEOUT_MS'] || '10000', 10),
+  statement_timeout: parseInt(process.env['DB_STATEMENT_TIMEOUT_MS'] || '300000', 10),
+  application_name: 'whatsapp-api-backend',
+});
+
+// Handle pool errors
+pool.on('error', (err) => {
+  console.error('[Pool Error]', err);
+});
+
+// Log pool configuration
+console.log('[Database Pool Configuration]', {
+  max: pool.options.max,
+  idleTimeoutMillis: pool.options.idleTimeoutMillis,
+  connectionTimeoutMillis: pool.options.connectionTimeoutMillis,
+  statement_timeout: pool.options.statement_timeout,
 });
 
 export const db = drizzle(pool, { schema });
