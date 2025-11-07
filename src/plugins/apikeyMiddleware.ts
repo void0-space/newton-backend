@@ -1,6 +1,5 @@
 import { FastifyPluginAsync } from 'fastify';
 import { auth } from '../lib/auth';
-import { verifyApiKeyFromDatabase } from '../utils/customApiKeyVerification';
 
 declare module 'fastify' {
   interface FastifyRequest {
@@ -27,9 +26,9 @@ const apikeyMiddleware: FastifyPluginAsync = async fastify => {
 
     if (apiKeyHeader) {
       try {
-        // Use custom verification that allows multiple active API keys
-        // (bypasses better-auth's single-key limitation)
-        const apiKeyData = await verifyApiKeyFromDatabase(apiKeyHeader);
+        const apiKeyData = await auth.api.verifyApiKey({
+          body: { key: apiKeyHeader },
+        });
 
         if (apiKeyData.valid && apiKeyData.key) {
           const metadata = apiKeyData.key.metadata || {};

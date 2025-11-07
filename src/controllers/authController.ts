@@ -52,12 +52,12 @@ export async function createApiKey(request: FastifyRequest, reply: FastifyReply)
         expiresIn: expiresIn || 60 * 60 * 24 * 30, // Default 30 days
         metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
         permissions: permissions ? { whatsapp: permissions } : { whatsapp: ['whatsapp:send'] },
-        rateLimitEnabled: true,
-        rateLimitMax: rateLimitMax || 100,
-        rateLimitTimeWindow: rateLimitTimeWindow || 60 * 60 * 1000, // 1 hour in ms
-        remaining: remaining || 1000,
-        refillAmount: remaining || 1000,
-        refillInterval: 60 * 60 * 24 * 1000, // Daily refill
+        rateLimitEnabled: false,
+        // rateLimitMax: rateLimitMax || 100,
+        // rateLimitTimeWindow: rateLimitTimeWindow || 60 * 60 * 1000, // 1 hour in ms
+        // remaining: remaining || 1000,
+        // refillAmount: remaining || 1000,
+        // refillInterval: 60 * 60 * 24 * 1000, // Daily refill
       },
     });
 
