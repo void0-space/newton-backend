@@ -4,6 +4,7 @@ import { createId } from '@paralleldrive/cuid2';
 import { db } from '../db/drizzle';
 import { message } from '../db/schema';
 import { auth } from '../lib/auth';
+import { verifyApiKeyFromDatabase } from '../utils/customApiKeyVerification';
 
 const sendMessageSchema = z
   .object({
@@ -48,13 +49,9 @@ export async function sendMessage(request: FastifyRequest, reply: FastifyReply) 
 
     request.log.info(`API: Sending message - To: ${to}, Type: ${type}`);
 
-    // Get API key data (set by API key middleware)
+    // Get API key data - use custom verification that allows multiple active keys
     const apiKey = request.headers['x-api-key'];
-    const verifiedKey = await auth.api.verifyApiKey({
-      body: {
-        key: apiKey as string,
-      },
-    });
+    const verifiedKey = await verifyApiKeyFromDatabase(apiKey as string);
     request.log.info(`API: Verified API key - ${JSON.stringify(verifiedKey.key?.metadata)}`);
 
     if (!verifiedKey.valid) {
