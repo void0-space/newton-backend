@@ -116,8 +116,10 @@ export class BaileysManager {
         auth,
         logger: this.fastify.log,
         browser: Browsers.macOS('Desktop'),
-        // V7 simplified config - removed legacy options
-        defaultQueryTimeoutMs: undefined,
+        // V7 configuration - increased timeouts for reliability
+        defaultQueryTimeoutMs: 60000, // 60 second default query timeout (was undefined)
+        maxRetries: 5, // Retry up to 5 times on failure
+        connectTimeoutMs: 60000, // 60 second connection timeout
         shouldIgnoreJid: jid =>
           isJidBroadcast(jid) ||
           isJidNewsletter(jid) ||
@@ -233,19 +235,20 @@ export class BaileysManager {
       await this.saveSessionToDb(session);
 
       // For restored sessions with existing credentials, trigger auto-reconnection if needed
-      // After socket creation, wait for connection events. If not connected within timeout, trigger manual reconnect
+      // Allow 20 seconds for Baileys initial sync (AwaitingInitialSync phase)
+      // If still connecting after that, force a reconnection
       setTimeout(() => {
         const currentSession = this.sessions.get(sessionKey);
         if (currentSession && currentSession.socket && currentSession.status === 'connecting') {
-          this.fastify.log.info(
-            `Session ${sessionId} still connecting after initialization - triggering explicit reconnection attempt`
+          this.fastify.log.debug(
+            `Session ${sessionId} still connecting after 20s - triggering reconnection`
           );
           // Force reconnection attempt for restored sessions
           this.recreateSocket(sessionContext).catch(err =>
             this.fastify.log.error(`Failed to reconnect restored session ${sessionId}:`, err)
           );
         }
-      }, 8000);
+      }, 20000); // Increased from 8s to 20s to allow Baileys initial sync to complete
 
       return session;
     } catch (error) {
@@ -831,8 +834,10 @@ export class BaileysManager {
         auth,
         logger: this.fastify.log,
         browser: Browsers.macOS('Desktop'),
-        // V7 simplified config
-        defaultQueryTimeoutMs: undefined,
+        // V7 configuration - increased timeouts for reliability
+        defaultQueryTimeoutMs: 60000, // 60 second default query timeout
+        maxRetries: 5, // Retry up to 5 times on failure
+        connectTimeoutMs: 60000, // 60 second connection timeout
         shouldIgnoreJid: jid =>
           isJidBroadcast(jid) ||
           isJidNewsletter(jid) ||
