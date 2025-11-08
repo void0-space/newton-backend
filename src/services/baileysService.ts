@@ -508,6 +508,44 @@ export class BaileysManager {
     }
   }
 
+  async fetchAndSyncContacts(
+    sessionId: string,
+    organizationId: string
+  ): Promise<{ synced: number; error?: string }> {
+    try {
+      const sessionKey = `${organizationId}:${sessionId}`;
+      const session = this.sessions.get(sessionKey);
+
+      if (!session || !session.socket) {
+        return { synced: 0, error: 'Session not found or not connected' };
+      }
+
+      this.fastify.log.info(`Fetching contacts for session ${sessionId}...`);
+
+      // Get all contacts from the socket
+      const contactsMap = session.socket.contacts || {};
+      const contactArray = Object.values(contactsMap) as any[];
+
+      if (!contactArray || contactArray.length === 0) {
+        this.fastify.log.info(`No contacts found for session ${sessionId}`);
+        return { synced: 0 };
+      }
+
+      this.fastify.log.info(`Found ${contactArray.length} contacts, syncing...`);
+
+      await this.handleContactsUpsert(
+        { sessionId, organizationId, sessionKey },
+        contactArray
+      );
+
+      return { synced: contactArray.length };
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      this.fastify.log.error(`Error fetching contacts for session ${sessionId}:`, error);
+      return { synced: 0, error: errorMessage };
+    }
+  }
+
   private async handleConnectionUpdate(
     sessionContext: { sessionId: string; organizationId: string; sessionKey: string },
     update: Partial<ConnectionState>

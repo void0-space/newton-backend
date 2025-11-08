@@ -207,6 +207,57 @@ const whatsappRoutes: FastifyPluginAsync = async fastify => {
     }
   );
 
+  // Contacts syncing route
+  fastify.post(
+    '/accounts/:id/sync-contacts',
+    { preHandler: sessionAuthMiddleware },
+    async (request: any, reply) => {
+      try {
+        const organizationId = request.organization.id;
+        const { id: sessionId } = request.params;
+
+        // Verify the session belongs to this organization
+        const [session] = await db
+          .select()
+          .from(whatsappSession)
+          .where(
+            and(
+              eq(whatsappSession.id, sessionId),
+              eq(whatsappSession.organizationId, organizationId)
+            )
+          )
+          .limit(1);
+
+        if (!session) {
+          return reply.status(404).send({ error: 'Session not found' });
+        }
+
+        // Call the BaileysManager to fetch and sync contacts
+        const result = await fastify.baileys.fetchAndSyncContacts(sessionId, organizationId);
+
+        if (result.error) {
+          return reply.status(400).send({
+            error: 'Failed to sync contacts',
+            message: result.error,
+            synced: result.synced,
+          });
+        }
+
+        return reply.send({
+          success: true,
+          message: `Successfully synced ${result.synced} contacts`,
+          synced: result.synced,
+        });
+      } catch (error) {
+        fastify.log.error('Error syncing contacts:', error);
+        return reply.status(500).send({
+          error: 'Internal server error',
+          message: error instanceof Error ? error.message : 'Unknown error',
+        });
+      }
+    }
+  );
+
   // Real-time status updates via Server-Sent Events
   fastify.get(
     '/status-updates',
