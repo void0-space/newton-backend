@@ -158,44 +158,44 @@ export class BaileysManager {
           const senderJid = msg.key.remoteJid;
           if (senderJid) {
             const queue = this.getQueueFor(sessionId, senderJid);
-            queue.add(async () => {
-              // Acquire distributed lock to ensure only one replica processes this JID
-              await this.lockManager
-                .withJidLock(senderJid, async () => {
-                  try {
-                    // Accessing msg.message triggers decryption - must be inside the lock
-                    const _content = msg.message;
-                    await this.handleMessages(sessionContext, {
-                      messages: [msg],
-                      type: messageUpdate.type,
-                    });
-                  } catch (err: any) {
-                    // Log but don't surface as 500 - transient pkmsg failures are expected
-                    // Baileys handles retry receipts for known failures
-                    this.fastify.log.warn(
-                      {
-                        err: {
-                          code: err?.code,
-                          message: err?.message,
+            queue
+              .add(async () => {
+                // Acquire distributed lock to ensure only one replica processes this JID
+                await this.lockManager
+                  .withJidLock(senderJid, async () => {
+                    try {
+                      // Accessing msg.message triggers decryption - must be inside the lock
+                      const _content = msg.message;
+                      await this.handleMessages(sessionContext, {
+                        messages: [msg],
+                        type: messageUpdate.type,
+                      });
+                    } catch (err: any) {
+                      // Log but don't surface as 500 - transient pkmsg failures are expected
+                      // Baileys handles retry receipts for known failures
+                      this.fastify.log.warn(
+                        {
+                          err: {
+                            code: err?.code,
+                            message: err?.message,
+                          },
+                          jid: senderJid,
+                          sessionId,
+                          messageId: msg.key.id,
                         },
-                        jid: senderJid,
-                        sessionId,
-                        messageId: msg.key.id,
-                      },
-                      'Message decrypt/process failed - will rely on client retry'
+                        'Message decrypt/process failed - will rely on client retry'
+                      );
+                      // Don't rethrow - let the client handle retry
+                    }
+                  })
+                  .catch(lockErr => {
+                    this.fastify.log.debug(
+                      { jid: senderJid, sessionId },
+                      'Failed to acquire distributed lock - another replica processing'
                     );
-                    // Don't rethrow - let the client handle retry
-                  }
-                })
-                .catch(lockErr => {
-                  this.fastify.log.debug(
-                    { jid: senderJid, sessionId },
-                    'Failed to acquire distributed lock - another replica processing'
-                  );
-                });
-            }).catch(err =>
-              this.fastify.log.error('Error queuing message:', err)
-            );
+                  });
+              })
+              .catch(err => this.fastify.log.error('Error queuing message:', err));
           }
         }
       });
@@ -203,7 +203,9 @@ export class BaileysManager {
       // Handle message status updates
       socket.ev.on('messages.update', updates => {
         // Only log count, not full payload (reduces buffer pressure)
-        this.fastify.log.debug(`🔄 messages.update: ${updates.length} updates for session ${sessionId}`);
+        this.fastify.log.debug(
+          `🔄 messages.update: ${updates.length} updates for session ${sessionId}`
+        );
         this.handleMessageUpdates(sessionContext, updates).catch(err =>
           this.fastify.log.error('Error in handleMessageUpdates:', err)
         );
@@ -225,7 +227,9 @@ export class BaileysManager {
       // Handle groups sync
       socket.ev.on('groups.upsert', groups => {
         // Only log count, not full payload (reduces buffer pressure)
-        this.fastify.log.debug(`👫 groups.upsert: ${groups.length} groups for session ${sessionId}`);
+        this.fastify.log.debug(
+          `👫 groups.upsert: ${groups.length} groups for session ${sessionId}`
+        );
         this.handleGroupsUpsert(sessionContext, groups).catch(err =>
           this.fastify.log.error('Error in handleGroupsUpsert:', err)
         );
@@ -533,10 +537,7 @@ export class BaileysManager {
 
       this.fastify.log.info(`Found ${contactArray.length} contacts, syncing...`);
 
-      await this.handleContactsUpsert(
-        { sessionId, organizationId, sessionKey },
-        contactArray
-      );
+      await this.handleContactsUpsert({ sessionId, organizationId, sessionKey }, contactArray);
 
       return { synced: contactArray.length };
     } catch (error) {
@@ -898,33 +899,36 @@ export class BaileysManager {
           const senderJid = msg.key.remoteJid;
           if (senderJid) {
             const queue = this.getQueueFor(sessionId, senderJid);
-            queue.add(async () => {
-              await this.lockManager
-                .withJidLock(senderJid, async () => {
-                  try {
-                    const _content = msg.message; // Triggers decryption - must be inside lock
-                    await this.handleMessages(sessionContext, { messages: [msg], type: messageUpdate.type });
-                  } catch (err: any) {
+            queue
+              .add(async () => {
+                await this.lockManager
+                  .withJidLock(senderJid, async () => {
+                    try {
+                      const _content = msg.message; // Triggers decryption - must be inside lock
+                      await this.handleMessages(sessionContext, {
+                        messages: [msg],
+                        type: messageUpdate.type,
+                      });
+                    } catch (err: any) {
+                      this.fastify.log.warn(
+                        {
+                          err: { code: err?.code, message: err?.message },
+                          jid: senderJid,
+                          sessionId,
+                          messageId: msg.key.id,
+                        },
+                        'Message decrypt/process failed - will rely on client retry'
+                      );
+                    }
+                  })
+                  .catch(lockErr => {
                     this.fastify.log.warn(
-                      {
-                        err: { code: err?.code, message: err?.message },
-                        jid: senderJid,
-                        sessionId,
-                        messageId: msg.key.id,
-                      },
-                      'Message decrypt/process failed - will rely on client retry'
+                      { err: lockErr, jid: senderJid, sessionId },
+                      'Failed to acquire distributed lock for JID'
                     );
-                  }
-                })
-                .catch(lockErr => {
-                  this.fastify.log.warn(
-                    { err: lockErr, jid: senderJid, sessionId },
-                    'Failed to acquire distributed lock for JID'
-                  );
-                });
-            }).catch(err =>
-              this.fastify.log.error('Error queuing message:', err)
-            );
+                  });
+              })
+              .catch(err => this.fastify.log.error('Error queuing message:', err));
           }
         }
       });
@@ -934,13 +938,17 @@ export class BaileysManager {
         )
       );
       socket.ev.on('contacts.upsert', contacts => {
-        this.fastify.log.debug(`👥 contacts.upsert: ${contacts.length} contacts for session ${sessionId}`);
+        this.fastify.log.debug(
+          `👥 contacts.upsert: ${contacts.length} contacts for session ${sessionId}`
+        );
         this.handleContactsUpsert(sessionContext, contacts).catch(err =>
           this.fastify.log.error('Error in handleContactsUpsert:', err)
         );
       });
       socket.ev.on('groups.upsert', groups => {
-        this.fastify.log.debug(`👫 groups.upsert: ${groups.length} groups for session ${sessionId}`);
+        this.fastify.log.debug(
+          `👫 groups.upsert: ${groups.length} groups for session ${sessionId}`
+        );
         this.handleGroupsUpsert(sessionContext, groups).catch(err =>
           this.fastify.log.error('Error in handleGroupsUpsert:', err)
         );
@@ -1305,7 +1313,7 @@ export class BaileysManager {
 
       this.fastify.log.info(`Successfully processed ${groups.length} WhatsApp groups`);
     } catch (error) {
-      this.fastify.log.error(`Error handling groups upsert for session ${sessionId}:`, error);
+      this.fastify.log.error(error, `Error handling groups upsert for session ${sessionId}:`);
     }
   }
 
@@ -1838,7 +1846,9 @@ export class BaileysManager {
         throw new Error('No pairing code returned from socket');
       }
 
-      this.fastify.log.info(`Successfully generated pairing code for session ${sessionId}: ${pairingCode}`);
+      this.fastify.log.info(
+        `Successfully generated pairing code for session ${sessionId}: ${pairingCode}`
+      );
 
       // Store the pairing code in the session
       session.pairingCode = pairingCode;
