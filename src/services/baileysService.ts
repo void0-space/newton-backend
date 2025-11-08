@@ -116,9 +116,9 @@ export class BaileysManager {
         auth,
         logger: this.fastify.log,
         browser: Browsers.macOS('Desktop'),
-        // V7 configuration - increased timeouts for reliability
-        defaultQueryTimeoutMs: 60000, // 60 second default query timeout (was undefined)
-        maxRetries: 5, // Retry up to 5 times on failure
+        // V7 configuration - balanced timeouts
+        defaultQueryTimeoutMs: 60000, // 60 second default query timeout
+        maxRetries: 3, // Retry 3 times on transient failures
         connectTimeoutMs: 60000, // 60 second connection timeout
         shouldIgnoreJid: jid =>
           isJidBroadcast(jid) ||
@@ -238,21 +238,9 @@ export class BaileysManager {
       // Save initial session to database
       await this.saveSessionToDb(session);
 
-      // For restored sessions with existing credentials, trigger auto-reconnection if needed
-      // Allow 20 seconds for Baileys initial sync (AwaitingInitialSync phase)
-      // If still connecting after that, force a reconnection
-      setTimeout(() => {
-        const currentSession = this.sessions.get(sessionKey);
-        if (currentSession && currentSession.socket && currentSession.status === 'connecting') {
-          this.fastify.log.debug(
-            `Session ${sessionId} still connecting after 20s - triggering reconnection`
-          );
-          // Force reconnection attempt for restored sessions
-          this.recreateSocket(sessionContext).catch(err =>
-            this.fastify.log.error(`Failed to reconnect restored session ${sessionId}:`, err)
-          );
-        }
-      }, 20000); // Increased from 8s to 20s to allow Baileys initial sync to complete
+      // Don't force reconnection on timeout - let Baileys handle AwaitingInitialSync naturally
+      // Forcing reconnection interrupts the initialization and causes inconsistent state
+      // Baileys will emit connection.update events as state changes, we handle those
 
       return session;
     } catch (error) {
@@ -554,17 +542,6 @@ export class BaileysManager {
     const { sessionId, organizationId, sessionKey } = sessionContext;
     const session = this.sessions.get(sessionKey);
 
-    this.fastify.log.info(
-      update,
-      `Connection update for session ${sessionId}: ${JSON.stringify({
-        foundSession: !!session,
-        sessionKey,
-        sessionStatus: session?.status,
-        updateConnection: update.connection,
-        organizationId,
-      })}`
-    );
-
     if (!session) {
       this.fastify.log.error(`Session ${sessionId} not found in memory during connection update`);
       return;
@@ -572,10 +549,12 @@ export class BaileysManager {
 
     const { connection, lastDisconnect, qr } = update;
 
-    // Log full update structure for debugging (V7)
-    this.fastify.log.info(
-      `Session ${sessionId} full update object - keys: ${Object.keys(update).join(', ')}, connection: ${connection}, hasQR: ${!!qr}`
-    );
+    // Only log important state changes, not every update
+    if (connection || qr || lastDisconnect?.error) {
+      this.fastify.log.debug(
+        `Connection update for session ${sessionId}: connection=${connection}, hasQR=${!!qr}, hasError=${!!lastDisconnect?.error}`
+      );
+    }
 
     if (qr) {
       this.fastify.log.info(`QR code generated for session ${sessionId}`);
@@ -873,9 +852,9 @@ export class BaileysManager {
         auth,
         logger: this.fastify.log,
         browser: Browsers.macOS('Desktop'),
-        // V7 configuration - increased timeouts for reliability
+        // V7 configuration - balanced timeouts
         defaultQueryTimeoutMs: 60000, // 60 second default query timeout
-        maxRetries: 5, // Retry up to 5 times on failure
+        maxRetries: 3, // Retry 3 times on transient failures
         connectTimeoutMs: 60000, // 60 second connection timeout
         shouldIgnoreJid: jid =>
           isJidBroadcast(jid) ||
