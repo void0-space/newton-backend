@@ -17,7 +17,7 @@ import {
 import QRCode from 'qrcode';
 import { FastifyInstance } from 'fastify';
 import { db } from '../db/drizzle';
-import { whatsappSession, message, contact } from '../db/schema';
+import { whatsappSession, message, contact, contactGroup } from '../db/schema';
 import { eq, and } from 'drizzle-orm';
 import { encryptData } from '../utils/crypto';
 import { createId } from '@paralleldrive/cuid2';
@@ -1162,10 +1162,6 @@ export class BaileysManager {
 
     try {
       this.fastify.log.info(`Processing ${groups.length} groups from WhatsApp`);
-      this.fastify.log.info(groups, `Groups: `);
-      // Import schemas
-      const { contact, contactGroup } = await import('../db/schema');
-      const { createId } = await import('@paralleldrive/cuid2');
 
       for (const waGroup of groups) {
         try {
