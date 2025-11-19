@@ -6,6 +6,7 @@ import {
   getMessageStatus,
   getMessages,
   getMessagesBySession,
+  getMessagesByContact,
 } from '../controllers/messageController';
 
 const messageRoutes: FastifyPluginAsync = async (fastify) => {
@@ -33,6 +34,7 @@ const messageRoutes: FastifyPluginAsync = async (fastify) => {
 
   // Message retrieval routes
   fastify.get('/', getMessages);
+  fastify.get('/contact/:phone', getMessagesByContact);
   fastify.get('/:id', getMessageStatus);
   fastify.get('/session/:sessionId', getMessagesBySession);
 };

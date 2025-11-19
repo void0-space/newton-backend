@@ -1,7 +1,7 @@
 import { FastifyRequest, FastifyReply } from 'fastify';
 import { db } from '../db/drizzle';
 import { message, messageStatus, whatsappSession, media } from '../db/schema';
-import { eq, and, desc } from 'drizzle-orm';
+import { eq, and, desc, or, count } from 'drizzle-orm';
 import { z } from 'zod';
 import { createId } from '@paralleldrive/cuid2';
 
@@ -605,6 +605,82 @@ export async function getMessagesBySession(request: FastifyRequest, reply: Fasti
     return reply.status(500).send({
       error: 'Failed to fetch session messages',
       code: 'FETCH_SESSION_MESSAGES_FAILED',
+    });
+  }
+}
+
+export async function getMessagesByContact(request: FastifyRequest, reply: FastifyReply) {
+  try {
+    const { phone } = request.params as { phone: string };
+    const { limit, offset } = getMessagesSchema.parse(request.query);
+
+    if (!request.organization) {
+      return reply.status(400).send({
+        error: 'Organization context required',
+        code: 'ORGANIZATION_REQUIRED',
+      });
+    }
+
+    // Normalize phone number to match WhatsApp format
+    const normalizedPhone = normalizePhoneNumber(phone);
+
+    // Query messages where from or to matches the phone
+    const messages = await db
+      .select()
+      .from(message)
+      .where(and(
+        eq(message.organizationId, request.organization.id),
+        or(
+          eq(message.from, normalizedPhone),
+          eq(message.to, normalizedPhone)
+        )
+      ))
+      .orderBy(desc(message.createdAt))
+      .limit(limit)
+      .offset(offset);
+
+    // Get total count for pagination
+    const countResult = await db
+      .select({ count: count() })
+      .from(message)
+      .where(and(
+        eq(message.organizationId, request.organization.id),
+        or(
+          eq(message.from, normalizedPhone),
+          eq(message.to, normalizedPhone)
+        )
+      ));
+
+    const total = countResult[0]?.count || 0;
+
+    return reply.send({
+      success: true,
+      messages: messages.map(msg => ({
+        id: msg.id,
+        sessionId: msg.sessionId,
+        accountPhone: msg.from === normalizedPhone ? msg.to : msg.from,
+        direction: msg.direction,
+        from: msg.from,
+        to: msg.to,
+        type: msg.messageType,
+        message: typeof msg.content === 'string' ? msg.content : msg.content?.text,
+        content: msg.content,
+        status: msg.status,
+        mediaUrl: msg.mediaUrl,
+        timestamp: msg.createdAt?.toISOString(),
+      })),
+      pagination: {
+        limit,
+        offset,
+        total,
+        hasMore: offset + limit < total,
+      },
+    });
+  } catch (error) {
+    request.log.error('Error fetching contact messages: ' + (error instanceof Error ? error.message : String(error)));
+    return reply.status(500).send({
+      error: 'Failed to fetch contact messages',
+      code: 'FETCH_CONTACT_MESSAGES_FAILED',
     });
   }
 }

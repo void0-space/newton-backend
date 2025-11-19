@@ -11,6 +11,7 @@ import {
   updateSessionSettings,
   reconnectWhatsAppSession,
 } from '../controllers/whatsappController';
+import { getMessagesByContact } from '../controllers/messageController';
 import { sendMessage } from '../controllers/apiController';
 import { auth } from '../lib/auth';
 import { convertHeaders } from '../utils/header';
@@ -345,6 +346,9 @@ const whatsappRoutes: FastifyPluginAsync = async fastify => {
   // Message routes
   // Get messages for admin panel
   fastify.get('/messages', { preHandler: sessionAuthMiddleware }, getMessages);
+
+  // Get messages by contact for chat page (session authenticated)
+  fastify.get('/messages/contact/:phone', { preHandler: sessionAuthMiddleware }, getMessagesByContact);
 
   // Message sending routes
   // Internal route for admin panel - require session auth
