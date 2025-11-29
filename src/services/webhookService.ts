@@ -1,6 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import { db } from '../db/drizzle';
-import { webhook, webhookDelivery } from '../db/schema';
+import { webhook, webhookDelivery, whatsappSession } from '../db/schema';
 import { eq, and, lt } from 'drizzle-orm';
 import { createId } from '@paralleldrive/cuid2';
 import crypto from 'crypto';
@@ -111,6 +111,23 @@ export class WebhookService {
           if (data.from) {
             const fromPhone = data.from.split('@')[0];
             params.append('from', fromPhone);
+          }
+
+          // To field - get account phone number from session
+          if (payload.sessionId) {
+            try {
+              const [session] = await db
+                .select()
+                .from(whatsappSession)
+                .where(eq(whatsappSession.id, payload.sessionId))
+                .limit(1);
+
+              if (session && session.phoneNumber) {
+                params.append('to', session.phoneNumber);
+              }
+            } catch (error) {
+              this.fastify.log.error(`Error fetching session for webhook: ${error}`);
+            }
           }
 
           // Message ID
