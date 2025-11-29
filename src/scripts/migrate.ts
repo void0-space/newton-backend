@@ -1,11 +1,9 @@
-#!/usr/bin/env node
-
 /**
  * Migration wrapper script that ensures process exits after migrations complete
  * This prevents Railway deployments from hanging on the db:migrate step
  */
 
-const { spawn } = require('child_process');
+import { spawn } from 'child_process';
 
 const migrate = spawn('drizzle-kit', ['migrate', '--config', 'drizzle.config.ts'], {
   stdio: 'inherit',
@@ -14,7 +12,7 @@ const migrate = spawn('drizzle-kit', ['migrate', '--config', 'drizzle.config.ts'
 
 migrate.on('exit', (code) => {
   console.log(`\nMigrations completed with exit code: ${code}`);
-  process.exit(code);
+  process.exit(code || 0);
 });
 
 migrate.on('error', (error) => {
