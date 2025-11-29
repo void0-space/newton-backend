@@ -69,6 +69,9 @@ COPY --from=builder /app/dist ./dist
 COPY drizzle.config.ts ./
 COPY src/db ./src/db
 
+# Copy scripts
+COPY src/scripts ./src/scripts
+
 # Fix ownership
 RUN chown -R fastify:nodejs /app
 
