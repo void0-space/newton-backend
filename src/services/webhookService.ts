@@ -119,6 +119,11 @@ export class WebhookService {
         }
 
         url = `${webhookConfig.url}?${params.toString()}`;
+
+        // Log for debugging
+        this.fastify.log.info(`Webhook Parameter Mode - Event: ${payload.event}`);
+        this.fastify.log.info(`Webhook Parameter Mode - Data: ${JSON.stringify(payload.data)}`);
+        this.fastify.log.info(`Webhook Parameter Mode - URL: ${url}`);
       } else {
         // Send data in request body (default behavior)
         headers['Content-Type'] = 'application/json';
