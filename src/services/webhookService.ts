@@ -153,7 +153,7 @@ export class WebhookService {
 
           // Add any other fields that aren't nested objects
           for (const [key, value] of Object.entries(data)) {
-            if (key !== 'from' && key !== 'messageId' && key !== 'content' && key !== 'timestamp' &&
+            if (key !== 'from' && key !== 'messageId' && key !== 'content' && key !== 'timestamp' && key !== 'sessionId' &&
                 value !== null && value !== undefined && typeof value !== 'object') {
               params.append(key, String(value));
             }
