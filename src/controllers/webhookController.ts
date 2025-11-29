@@ -44,6 +44,7 @@ export async function createWebhook(request: FastifyRequest, reply: FastifyReply
       url: z.string().url(),
       events: z.array(z.enum(WEBHOOK_EVENTS)).min(1),
       secret: z.string().optional(),
+      type: z.enum(['body', 'parameter']).default('body'),
       active: z.boolean().default(true),
     });
 
@@ -59,6 +60,7 @@ export async function createWebhook(request: FastifyRequest, reply: FastifyReply
       url: data.url,
       events: data.events,
       secret,
+      type: data.type,
       active: data.active,
     });
 
@@ -194,6 +196,7 @@ export async function updateWebhook(request: FastifyRequest, reply: FastifyReply
       url: z.string().url().optional(),
       events: z.array(z.enum(WEBHOOK_EVENTS)).min(1).optional(),
       secret: z.string().optional(),
+      type: z.enum(['body', 'parameter']).optional(),
       active: z.boolean().optional(),
     });
 

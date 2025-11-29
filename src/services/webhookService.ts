@@ -81,12 +81,54 @@ export class WebhookService {
 
   private async attemptDelivery(deliveryId: string, webhookConfig: any, payloadString: string) {
     try {
+      const payload = JSON.parse(payloadString);
       const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
         'User-Agent': 'WhatsApp-API-Webhook/1.0',
         'X-Webhook-Delivery': deliveryId,
-        'X-Webhook-Event': JSON.parse(payloadString).event,
+        'X-Webhook-Event': payload.event,
       };
+
+      let url = webhookConfig.url;
+      let body: string | undefined = undefined;
+
+      // Handle different webhook types
+      if (webhookConfig.type === 'parameter') {
+        // Send data as URL query parameters
+        const params = new URLSearchParams();
+
+        // Flatten the data object for query parameters
+        const flattenData = (obj: any, prefix = '') => {
+          for (const key in obj) {
+            const value = obj[key];
+            const fullKey = prefix ? `${prefix}.${key}` : key;
+
+            if (value === null || value === undefined) {
+              params.append(fullKey, '');
+            } else if (typeof value === 'object') {
+              flattenData(value, fullKey);
+            } else {
+              params.append(fullKey, String(value));
+            }
+          }
+        };
+
+        // Add all fields from the payload to params
+        params.append('platform', 'whatsapp');
+        params.append('action', payload.event.split('.')[1] || payload.event);
+        flattenData(payload.data);
+
+        // Add organization and session IDs
+        params.append('organizationId', payload.organizationId);
+        if (payload.sessionId) {
+          params.append('sessionId', payload.sessionId);
+        }
+
+        url = `${webhookConfig.url}?${params.toString()}`;
+      } else {
+        // Send data in request body (default behavior)
+        headers['Content-Type'] = 'application/json';
+        body = payloadString;
+      }
 
       // Add signature if webhook has secret
       if (webhookConfig.secret) {
@@ -94,10 +136,10 @@ export class WebhookService {
         headers['X-Webhook-Signature'] = signature;
       }
 
-      const response = await fetch(webhookConfig.url, {
+      const response = await fetch(url, {
         method: 'POST',
         headers,
-        body: payloadString,
+        ...(body && { body }),
         signal: AbortSignal.timeout(30000), // 30 second timeout
       });
 

@@ -15,6 +15,13 @@
       "when": 1763545303506,
       "tag": "0001_yummy_scarecrow",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1764415499315,
+      "tag": "0002_low_human_fly",
+      "breakpoints": true
     }
   ]
 }

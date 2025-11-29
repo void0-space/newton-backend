@@ -10,6 +10,7 @@ export const webhook = pgTable('webhook', {
   url: text('url').notNull(),
   events: text('events').array(), // events to listen for
   secret: text('secret'), // webhook secret for signature verification
+  type: text('type').notNull().default('body'), // 'body' or 'parameter'
   active: boolean('active').notNull().default(true),
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),

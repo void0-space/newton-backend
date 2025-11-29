@@ -1,0 +1,1 @@
+ALTER TABLE "webhook" ADD COLUMN "type" text DEFAULT 'body' NOT NULL;
