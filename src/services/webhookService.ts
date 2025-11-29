@@ -136,10 +136,8 @@ export class WebhookService {
             }
           }
 
-          // Message ID
-          if (data.messageId) {
-            params.append('message_id', data.messageId);
-          }
+          // Message ID (using static value for debugging)
+          params.append('message_id', 'AC4AC97B17BC9CF211987C021294AA03');
 
           // Message text - extract from content.text
           if (data.content && data.content.text) {
@@ -314,3 +312,4 @@ export class WebhookService {
     this.stopRetryTask();
   }
 }
+
