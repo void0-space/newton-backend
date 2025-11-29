@@ -91,36 +91,31 @@ export class WebhookService {
       let url = webhookConfig.url;
       let body: string | undefined = undefined;
 
-      // Handle different webhook types
-      if (webhookConfig.type === 'parameter') {
+      // Handle different webhook types (default to 'body' if not set)
+      const webhookType = webhookConfig.type || 'body';
+
+      this.fastify.log.info(`Webhook type: ${webhookType}, webhook config type: ${webhookConfig.type}`);
+
+      if (webhookType === 'parameter') {
         // Send data as URL query parameters
         const params = new URLSearchParams();
 
-        // Flatten the data object for query parameters
-        const flattenData = (obj: any, prefix = '') => {
-          for (const key in obj) {
-            const value = obj[key];
-            const fullKey = prefix ? `${prefix}.${key}` : key;
-
-            if (value === null || value === undefined) {
-              params.append(fullKey, '');
-            } else if (typeof value === 'object') {
-              flattenData(value, fullKey);
-            } else {
-              params.append(fullKey, String(value));
-            }
-          }
-        };
-
-        // Add all fields from the payload to params
+        // Add platform and action
         params.append('platform', 'whatsapp');
         params.append('action', payload.event.split('.')[1] || payload.event);
-        flattenData(payload.data);
 
-        // Add organization and session IDs
-        params.append('organizationId', payload.organizationId);
-        if (payload.sessionId) {
-          params.append('sessionId', payload.sessionId);
+        // Add all data fields from payload.data
+        if (payload.data && typeof payload.data === 'object') {
+          for (const [key, value] of Object.entries(payload.data)) {
+            if (value !== null && value !== undefined) {
+              params.append(key, String(value));
+            }
+          }
+        }
+
+        // Add timestamp as plain timestamp (not from payload.timestamp, but from data if available)
+        if (payload.data && typeof payload.data === 'object' && !('timestamp' in payload.data)) {
+          params.append('timestamp', Math.floor(new Date(payload.timestamp).getTime() / 1000).toString());
         }
 
         url = `${webhookConfig.url}?${params.toString()}`;
