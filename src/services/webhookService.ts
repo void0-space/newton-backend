@@ -103,7 +103,13 @@ export class WebhookService {
 
         // Add platform and action
         params.append('platform', 'whatsapp');
-        params.append('action', payload.event.split('.')[1] || payload.event);
+
+        // Determine action based on event type
+        let action = 'incoming';
+        if (payload.event.includes('sent') || payload.event.includes('outbound')) {
+          action = 'outgoing';
+        }
+        params.append('action', action);
 
         // Extract and normalize fields from nested structure
         if (data) {
