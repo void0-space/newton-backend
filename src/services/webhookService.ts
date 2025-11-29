@@ -29,10 +29,7 @@ export class WebhookService {
       const webhooks = await db
         .select()
         .from(webhook)
-        .where(and(
-          eq(webhook.organizationId, organizationId),
-          eq(webhook.active, true)
-        ));
+        .where(and(eq(webhook.organizationId, organizationId), eq(webhook.active, true)));
 
       const payload: WebhookPayload = {
         event,
@@ -51,7 +48,9 @@ export class WebhookService {
         await this.deliverWebhook(webhookConfig, payload);
       }
     } catch (error) {
-      this.fastify.log.error('Error sending webhook: ' + (error instanceof Error ? error.message : String(error)));
+      this.fastify.log.error(
+        'Error sending webhook: ' + (error instanceof Error ? error.message : String(error))
+      );
     }
   }
 
@@ -94,7 +93,9 @@ export class WebhookService {
       // Handle different webhook types (default to 'body' if not set)
       const webhookType = webhookConfig.type || 'body';
 
-      this.fastify.log.info(`Webhook type: ${webhookType}, webhook config type: ${webhookConfig.type}`);
+      this.fastify.log.info(
+        `Webhook type: ${webhookType}, webhook config type: ${webhookConfig.type}`
+      );
 
       if (webhookType === 'parameter') {
         // Send data as URL query parameters
@@ -136,8 +137,10 @@ export class WebhookService {
             }
           }
 
-          // Message ID (using static value for debugging)
-          params.append('message_id', 'AC4AC97B17BC9CF211987C021294AA03');
+          // Message ID
+          if (data.messageId) {
+            params.append('message_id', data.messageId);
+          }
 
           // Message text - extract from content.text
           if (data.content && data.content.text) {
@@ -151,8 +154,16 @@ export class WebhookService {
 
           // Add any other fields that aren't nested objects
           for (const [key, value] of Object.entries(data)) {
-            if (key !== 'from' && key !== 'messageId' && key !== 'content' && key !== 'timestamp' && key !== 'sessionId' &&
-                value !== null && value !== undefined && typeof value !== 'object') {
+            if (
+              key !== 'from' &&
+              key !== 'messageId' &&
+              key !== 'content' &&
+              key !== 'timestamp' &&
+              key !== 'sessionId' &&
+              value !== null &&
+              value !== undefined &&
+              typeof value !== 'object'
+            ) {
               params.append(key, String(value));
             }
           }
@@ -203,7 +214,7 @@ export class WebhookService {
       }
     } catch (error) {
       this.fastify.log.error(`Webhook delivery error: ${deliveryId}`, error);
-      
+
       // Update delivery record with error
       await db
         .update(webhookDelivery)
@@ -231,7 +242,7 @@ export class WebhookService {
       if (!delivery) return;
 
       const attempts = parseInt(delivery.attempts) + 1;
-      
+
       // Max 5 retry attempts
       if (attempts > 5) {
         this.fastify.log.warn(`Max retry attempts reached for webhook delivery: ${deliveryId}`);
@@ -251,7 +262,9 @@ export class WebhookService {
         })
         .where(eq(webhookDelivery.id, deliveryId));
 
-      this.fastify.log.info(`Scheduled retry ${attempts} for webhook delivery: ${deliveryId} at ${nextAttempt}`);
+      this.fastify.log.info(
+        `Scheduled retry ${attempts} for webhook delivery: ${deliveryId} at ${nextAttempt}`
+      );
     } catch (error) {
       this.fastify.log.error(`Error scheduling retry for delivery ${deliveryId}:`, error);
     }
@@ -263,35 +276,44 @@ export class WebhookService {
 
   private setupRetryTask() {
     // Run every 5 minutes to check for failed deliveries that need retry
-    this.retryTask = cron.schedule('*/5 * * * *', async () => {
-      try {
-        const failedDeliveries = await db
-          .select()
-          .from(webhookDelivery)
-          .where(and(
-            eq(webhookDelivery.status, 'failed'),
-            lt(webhookDelivery.nextAttemptAt, new Date())
-          ));
-
-        for (const delivery of failedDeliveries) {
-          this.fastify.log.info(`Retrying webhook delivery: ${delivery.id}`);
-          
-          const [webhookConfig] = await db
+    this.retryTask = cron.schedule(
+      '*/5 * * * *',
+      async () => {
+        try {
+          const failedDeliveries = await db
             .select()
-            .from(webhook)
-            .where(eq(webhook.id, delivery.webhookId))
-            .limit(1);
+            .from(webhookDelivery)
+            .where(
+              and(
+                eq(webhookDelivery.status, 'failed'),
+                lt(webhookDelivery.nextAttemptAt, new Date())
+              )
+            );
 
-          if (webhookConfig && webhookConfig.active) {
-            await this.attemptDelivery(delivery.id, webhookConfig, delivery.payload);
+          for (const delivery of failedDeliveries) {
+            this.fastify.log.info(`Retrying webhook delivery: ${delivery.id}`);
+
+            const [webhookConfig] = await db
+              .select()
+              .from(webhook)
+              .where(eq(webhook.id, delivery.webhookId))
+              .limit(1);
+
+            if (webhookConfig && webhookConfig.active) {
+              await this.attemptDelivery(delivery.id, webhookConfig, delivery.payload);
+            }
           }
+        } catch (error) {
+          this.fastify.log.error(
+            'Error in webhook retry task: ' +
+              (error instanceof Error ? error.message : String(error))
+          );
         }
-      } catch (error) {
-        this.fastify.log.error('Error in webhook retry task: ' + (error instanceof Error ? error.message : String(error)));
+      },
+      {
+        scheduled: false, // Don't start immediately
       }
-    }, {
-      scheduled: false, // Don't start immediately
-    });
+    );
   }
 
   startRetryTask() {
@@ -312,4 +334,3 @@ export class WebhookService {
     this.stopRetryTask();
   }
 }
-
