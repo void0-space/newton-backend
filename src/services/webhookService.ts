@@ -99,30 +99,47 @@ export class WebhookService {
       if (webhookType === 'parameter') {
         // Send data as URL query parameters
         const params = new URLSearchParams();
+        const data = payload.data as any;
 
         // Add platform and action
         params.append('platform', 'whatsapp');
         params.append('action', payload.event.split('.')[1] || payload.event);
 
-        // Add all data fields from payload.data
-        if (payload.data && typeof payload.data === 'object') {
-          for (const [key, value] of Object.entries(payload.data)) {
-            if (value !== null && value !== undefined) {
+        // Extract and normalize fields from nested structure
+        if (data) {
+          // From field - extract phone number without @s.whatsapp.net suffix
+          if (data.from) {
+            const fromPhone = data.from.split('@')[0];
+            params.append('from', fromPhone);
+          }
+
+          // Message ID
+          if (data.messageId) {
+            params.append('message_id', data.messageId);
+          }
+
+          // Message text - extract from content.text
+          if (data.content && data.content.text) {
+            params.append('message', data.content.text);
+          }
+
+          // Timestamp - use content.timestamp if available (unix epoch)
+          if (data.content && data.content.timestamp) {
+            params.append('timestamp', String(data.content.timestamp));
+          }
+
+          // Add any other fields that aren't nested objects
+          for (const [key, value] of Object.entries(data)) {
+            if (key !== 'from' && key !== 'messageId' && key !== 'content' && key !== 'timestamp' &&
+                value !== null && value !== undefined && typeof value !== 'object') {
               params.append(key, String(value));
             }
           }
         }
 
-        // Add timestamp as plain timestamp (not from payload.timestamp, but from data if available)
-        if (payload.data && typeof payload.data === 'object' && !('timestamp' in payload.data)) {
-          params.append('timestamp', Math.floor(new Date(payload.timestamp).getTime() / 1000).toString());
-        }
-
         url = `${webhookConfig.url}?${params.toString()}`;
 
         // Log for debugging
-        this.fastify.log.info(`Webhook Parameter Mode - Event: ${payload.event}`);
-        this.fastify.log.info(`Webhook Parameter Mode - Data: ${JSON.stringify(payload.data)}`);
         this.fastify.log.info(`Webhook Parameter Mode - URL: ${url}`);
       } else {
         // Send data in request body (default behavior)
