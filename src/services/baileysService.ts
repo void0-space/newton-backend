@@ -12,6 +12,7 @@ import {
   isJidNewsletter,
   isJidStatusBroadcast,
   isJidMetaAI,
+  isLidUser,
   jidNormalizedUser,
 } from '@whiskeysockets/baileys';
 import QRCode from 'qrcode';
@@ -988,17 +989,88 @@ export class BaileysManager {
   private async saveIncomingMessage(organizationId: string, sessionId: string, msg: WAMessage) {
     try {
       console.log(`💾 saveIncomingMessage called for session ${sessionId}`);
+
+      // Resolve LID to Phone Number if needed
+      let fromJid = msg.key.remoteJid || '';
+      const participantJid = msg.key.participant;
+
+      // For DMs: Check if remoteJid is a LID and try to resolve it
+      if (fromJid && isLidUser(fromJid)) {
+        this.fastify.log.info(`🔍 Detected LID in remoteJid: ${fromJid}`);
+
+        // Primary approach: Use remoteJidAlt if available (contains PN when main is LID)
+        if (msg.key.remoteJidAlt) {
+          fromJid = msg.key.remoteJidAlt;
+          this.fastify.log.info(`✅ Resolved LID to PN using remoteJidAlt: ${fromJid}`);
+        } else {
+          // Fallback: Try to resolve using signalRepository.lidMapping
+          const sessionKey = `${organizationId}:${sessionId}`;
+          const session = this.sessions.get(sessionKey);
+
+          if (session?.socket?.signalRepository?.lidMapping?.getPNForLID) {
+            try {
+              const resolvedPN = await session.socket.signalRepository.lidMapping.getPNForLID(fromJid);
+              if (resolvedPN) {
+                fromJid = resolvedPN;
+                this.fastify.log.info(`✅ Resolved LID to PN using signalRepository: ${fromJid}`);
+              } else {
+                this.fastify.log.warn(`⚠️ Could not resolve LID to PN, using LID: ${fromJid}`);
+              }
+            } catch (err) {
+              this.fastify.log.warn(`⚠️ Error resolving LID to PN: ${err instanceof Error ? err.message : String(err)}, using LID: ${fromJid}`);
+            }
+          } else {
+            this.fastify.log.warn(`⚠️ signalRepository.lidMapping not available, using LID: ${fromJid}`);
+          }
+        }
+      }
+
+      // For Groups: Resolve participant LID if needed
+      let resolvedParticipant = participantJid;
+      if (participantJid && isLidUser(participantJid)) {
+        this.fastify.log.info(`🔍 Detected LID in participant: ${participantJid}`);
+
+        // Primary approach: Use participantAlt if available
+        if (msg.key.participantAlt) {
+          resolvedParticipant = msg.key.participantAlt;
+          this.fastify.log.info(`✅ Resolved participant LID to PN using participantAlt: ${resolvedParticipant}`);
+        } else {
+          // Fallback: Try to resolve using signalRepository.lidMapping
+          const sessionKey = `${organizationId}:${sessionId}`;
+          const session = this.sessions.get(sessionKey);
+
+          if (session?.socket?.signalRepository?.lidMapping?.getPNForLID) {
+            try {
+              const resolvedPN = await session.socket.signalRepository.lidMapping.getPNForLID(participantJid);
+              if (resolvedPN) {
+                resolvedParticipant = resolvedPN;
+                this.fastify.log.info(`✅ Resolved participant LID to PN using signalRepository: ${resolvedParticipant}`);
+              } else {
+                this.fastify.log.warn(`⚠️ Could not resolve participant LID to PN, using LID: ${participantJid}`);
+              }
+            } catch (err) {
+              this.fastify.log.warn(`⚠️ Error resolving participant LID to PN: ${err instanceof Error ? err.message : String(err)}, using LID: ${participantJid}`);
+            }
+          } else {
+            this.fastify.log.warn(`⚠️ signalRepository.lidMapping not available for participant, using LID: ${participantJid}`);
+          }
+        }
+      }
+
       const messageContent = {
         text: msg.message?.conversation || msg.message?.extendedTextMessage?.text,
         type: this.getMessageType(msg),
         timestamp: msg.messageTimestamp,
-        participant: msg.key.participant,
+        participant: resolvedParticipant,
       };
 
       console.log(`📝 Message content:`, {
         text: messageContent.text,
         type: messageContent.type,
-        from: msg.key.remoteJid,
+        from: fromJid,
+        originalFrom: msg.key.remoteJid,
+        participant: resolvedParticipant,
+        originalParticipant: participantJid,
       });
 
       await db.insert(message).values({
@@ -1007,7 +1079,7 @@ export class BaileysManager {
         sessionId,
         externalId: msg.key.id,
         direction: 'inbound',
-        from: msg.key.remoteJid || '',
+        from: fromJid,
         to: sessionId,
         messageType: messageContent.type,
         content: messageContent,
@@ -1022,7 +1094,7 @@ export class BaileysManager {
       // Publish message event
       await this.publishEvent(sessionId, 'message.received', {
         messageId: msg.key.id,
-        from: msg.key.remoteJid,
+        from: fromJid,
         content: messageContent,
       });
 
@@ -1033,7 +1105,7 @@ export class BaileysManager {
         {
           messageId: createId(),
           sessionId,
-          from: msg.key.remoteJid,
+          from: fromJid,
           content: messageContent,
           timestamp: new Date(Number(msg.messageTimestamp) * 1000).toISOString(),
         },
@@ -1044,7 +1116,7 @@ export class BaileysManager {
       try {
         const incomingMessage = {
           messageId: msg.key.id || createId(),
-          from: msg.key.remoteJid || '',
+          from: fromJid,
           text: messageContent.text || '',
           whatsappAccountId: sessionId,
           organizationId,
@@ -1055,13 +1127,13 @@ export class BaileysManager {
       } catch (autoReplyError) {
         this.fastify.log.warn(
           'Failed to process auto reply for incoming message: ' +
-            (autoReplyError instanceof Error ? autoReplyError.message : String(autoReplyError))
+          (autoReplyError instanceof Error ? autoReplyError.message : String(autoReplyError))
         );
       }
     } catch (error) {
       this.fastify.log.error(
         'Failed to save incoming message:: ' +
-          (error instanceof Error ? error.message : String(error))
+        (error instanceof Error ? error.message : String(error))
       );
     }
   }
@@ -1078,7 +1150,7 @@ export class BaileysManager {
     } catch (error) {
       this.fastify.log.error(
         'Failed to update message status:: ' +
-          (error instanceof Error ? error.message : String(error))
+        (error instanceof Error ? error.message : String(error))
       );
     }
   }
@@ -1408,30 +1480,30 @@ export class BaileysManager {
     } catch (error) {
       this.fastify.log.error(
         'Failed to save session to database:: ' +
-          ({
+        ({
+          error: error instanceof Error ? error.message : error,
+          stack: error instanceof Error ? error.stack : undefined,
+          sessionId: session.id,
+          organizationId: session.organizationId,
+          status: session.status,
+          fullError: error,
+        } instanceof Error
+          ? {
             error: error instanceof Error ? error.message : error,
             stack: error instanceof Error ? error.stack : undefined,
             sessionId: session.id,
             organizationId: session.organizationId,
             status: session.status,
             fullError: error,
-          } instanceof Error
-            ? {
-                error: error instanceof Error ? error.message : error,
-                stack: error instanceof Error ? error.stack : undefined,
-                sessionId: session.id,
-                organizationId: session.organizationId,
-                status: session.status,
-                fullError: error,
-              }.message
-            : String({
-                error: error instanceof Error ? error.message : error,
-                stack: error instanceof Error ? error.stack : undefined,
-                sessionId: session.id,
-                organizationId: session.organizationId,
-                status: session.status,
-                fullError: error,
-              }))
+          }.message
+          : String({
+            error: error instanceof Error ? error.message : error,
+            stack: error instanceof Error ? error.stack : undefined,
+            sessionId: session.id,
+            organizationId: session.organizationId,
+            status: session.status,
+            fullError: error,
+          }))
       );
 
       // Log the full error details to understand what's failing
@@ -1467,7 +1539,7 @@ export class BaileysManager {
     } catch (error) {
       this.fastify.log.error(
         'Failed to publish Redis event:: ' +
-          (error instanceof Error ? error.message : String(error))
+        (error instanceof Error ? error.message : String(error))
       );
     }
   }
@@ -1505,7 +1577,7 @@ export class BaileysManager {
     } catch (error) {
       this.fastify.log.error(
         'Failed to save outgoing message:: ' +
-          (error instanceof Error ? error.message : String(error))
+        (error instanceof Error ? error.message : String(error))
       );
     }
   }
