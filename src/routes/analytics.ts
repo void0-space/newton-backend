@@ -13,16 +13,7 @@ const analyticsRoutes: FastifyPluginAsync = async fastify => {
       // Convert Fastify headers to standard Headers object
       const headers = convertHeaders(request);
 
-      request.log.info('Analytics: Session auth middleware - checking session');
       const session = await auth.api.getSession({ headers });
-
-      request.log.info(
-        `Analytics: Session dataaa: ${JSON.stringify({
-          hasSession: !!session?.session,
-          hasActiveOrg: !!session?.session?.activeOrganizationId,
-          activeOrganizationId: session?.session?.activeOrganizationId,
-        })}`
-      );
 
       if (!session?.session) {
         request.log.warn('Analytics: No session found in auth middleware');
@@ -45,10 +36,6 @@ const analyticsRoutes: FastifyPluginAsync = async fastify => {
         id: session.session.activeOrganizationId,
         name: 'Unknown',
       };
-
-      request.log.info(
-        `Analytics: Session authenticated for organization: ${session.session.activeOrganizationId}`
-      );
     } catch (error) {
       request.log.error(
         'Analytics: Error in session auth middleware: ' +

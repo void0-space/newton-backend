@@ -27,16 +27,7 @@ const whatsappRoutes: FastifyPluginAsync = async fastify => {
       // Convert Fastify headers to standard Headers object
       const headers = convertHeaders(request);
 
-      request.log.info('Session auth middleware - checking session');
       const session = await auth.api.getSession({ headers });
-
-      request.log.info(
-        `Session data: ${JSON.stringify({
-          hasSession: !!session?.session,
-          hasActiveOrg: !!session?.session?.activeOrganizationId,
-          activeOrganizationId: session?.session?.activeOrganizationId,
-        })}`
-      );
 
       if (!session?.session) {
         request.log.warn('No session found in auth middleware');
@@ -59,10 +50,6 @@ const whatsappRoutes: FastifyPluginAsync = async fastify => {
         id: session.session.activeOrganizationId,
         name: 'Unknown', // TODO: Get organization name from database using activeOrganizationId
       };
-
-      request.log.info(
-        `Session authenticated for organization: ${session.session.activeOrganizationId}`
-      );
     } catch (error) {
       request.log.error(
         'Error in session auth middleware: ' +

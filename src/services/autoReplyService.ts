@@ -25,7 +25,6 @@ export class AutoReplyService {
 
   async processIncomingMessage(message: IncomingMessage): Promise<void> {
     try {
-      console.log(`Processing auto reply for message from ${message.from}`);
 
       // Get enabled auto reply rules for this WhatsApp account, ordered by priority
       const rules = await db
@@ -41,7 +40,6 @@ export class AutoReplyService {
         .orderBy(sql`${autoReply.priority} DESC`, sql`${autoReply.createdAt} ASC`);
 
       if (rules.length === 0) {
-        console.log('No auto reply rules found for this account');
         return;
       }
 
@@ -54,11 +52,8 @@ export class AutoReplyService {
           const matchResult = await this.checkRuleMatch(rule, message);
 
           if (!matchResult.matches) {
-            console.log(`Rule ${rule.name} did not match`);
             continue;
           }
-
-          console.log(`Rule ${rule.name} matched with: ${matchResult.trigger}`);
 
           // Check rate limits
           const rateLimitPassed = await this.checkRateLimit(rule, message.from);
@@ -72,7 +67,6 @@ export class AutoReplyService {
               'Rate limit exceeded',
               startTime
             );
-            console.log(`Rule ${rule.name} skipped due to rate limit`);
             continue;
           }
 
@@ -88,7 +82,6 @@ export class AutoReplyService {
               'Outside business hours',
               startTime
             );
-            console.log(`Rule ${rule.name} skipped due to business hours`);
             continue;
           }
 
@@ -112,8 +105,6 @@ export class AutoReplyService {
               startTime,
               replyResult.messageId
             );
-
-            console.log(`Auto reply sent successfully for rule ${rule.name}`);
 
             // Stop processing after first successful reply (highest priority wins)
             break;

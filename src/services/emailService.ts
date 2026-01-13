@@ -28,11 +28,6 @@ export async function sendPasswordResetEmail({
   userName = 'User',
 }: PasswordResetEmailOptions) {
   try {
-    console.log('Sending password reset email to:', email);
-    console.log('From:', process.env.EMAIL_FROM || 'noreply@smartpay.ink');
-    console.log('Resend API Key configured:', !!process.env.RESEND_API_KEY);
-    console.log('Resend API Key starts with:', process.env.RESEND_API_KEY?.substring(0, 10) + '...');
-
     const emailPayload = {
       from: process.env.EMAIL_FROM || 'noreply@smartpay.ink',
       to: email,
@@ -40,15 +35,7 @@ export async function sendPasswordResetEmail({
       html: generatePasswordResetTemplate(resetLink, userName),
     };
 
-    console.log('Email payload (without HTML):', {
-      from: emailPayload.from,
-      to: emailPayload.to,
-      subject: emailPayload.subject,
-    });
-
     const result = await resend.emails.send(emailPayload);
-
-    console.log('Resend API response:', JSON.stringify(result, null, 2));
     return result;
   } catch (error) {
     console.error('Error sending password reset email:', error);

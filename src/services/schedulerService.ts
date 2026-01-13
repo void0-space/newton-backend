@@ -57,8 +57,6 @@ export class SchedulerService {
         return;
       }
 
-      console.log(`📅 Processing ${dueMessages.length} due scheduled messages`);
-
       for (const message of dueMessages) {
         await this.processScheduledMessage(message);
       }
@@ -103,12 +101,9 @@ export class SchedulerService {
 
       if (!actualSession || actualSession.status !== 'connected') {
         const statusInfo = actualSession ? actualSession.status : 'not found in memory';
-        console.log(`📨 Session ${session.id} not available (status: ${statusInfo}), database shows: ${session.status}`);
         await this.markMessageFailed(message.id, `WhatsApp session is not connected. Status: ${statusInfo}`);
         return;
       }
-
-      console.log(`📨 Using connected session ${session.id} for scheduled message`);
 
       // Process each recipient
       const recipients = Array.isArray(message.recipients) ? message.recipients : [];
@@ -163,10 +158,6 @@ export class SchedulerService {
           `All ${recipients.length} messages failed to send`
         );
       }
-
-      console.log(
-        `✅ Processed scheduled message: ${message.name} (${successCount} sent, ${failedCount} failed)`
-      );
     } catch (error) {
       console.error('Error processing scheduled message:', error);
       await this.markMessageFailed(
@@ -178,9 +169,6 @@ export class SchedulerService {
 
   async sendMessageToRecipient(scheduledMsg: any, recipient: string, dbSession: any, baileysSession?: BaileysSession) {
     try {
-      console.log(
-        `📨 Sending scheduled message "${scheduledMsg.name}" to ${recipient} via ${dbSession.phoneNumber}`
-      );
 
       // Format recipient phone number
       const formattedRecipient = recipient.includes('@')
@@ -224,7 +212,6 @@ export class SchedulerService {
         if (baileysSession && baileysSession.socket && baileysSession.status === 'connected') {
           // Send via actual WhatsApp using the pre-validated session
           result = await baileysSession.socket.sendMessage(formattedRecipient, messageContent);
-          console.log(`✅ Message sent successfully via WhatsApp to ${recipient} via session ${dbSession.id}`);
         } else if (this.baileysManager) {
           // Fallback: Get the session using the public getSession method
           const sessionData = await this.baileysManager.getSession(dbSession.id, dbSession.organizationId);
@@ -232,7 +219,6 @@ export class SchedulerService {
           if (sessionData && sessionData.socket && sessionData.status === 'connected') {
             // Send via actual WhatsApp
             result = await sessionData.socket.sendMessage(formattedRecipient, messageContent);
-            console.log(`✅ Message sent successfully via WhatsApp to ${recipient} via session ${dbSession.id}`);
           } else {
             const sessionStatus = sessionData ? sessionData.status : 'not found';
             throw new Error(`WhatsApp session not properly connected. Session status: ${sessionStatus}`);
@@ -241,14 +227,13 @@ export class SchedulerService {
           throw new Error('Baileys manager not available and no session provided');
         }
       } catch (socketError) {
-        console.warn(`Failed to send via WhatsApp socket, using simulation:`, socketError);
+        console.warn(`Failed to send via WhatsApp socket:`, socketError);
 
         // Fallback to simulation for development/testing
         result = {
           key: { id: `scheduled_${createId()}` },
           status: 1,
         };
-        console.log(`📨 Simulated send to ${recipient} (WhatsApp not available)`);
       }
 
       // Save message to database (similar to regular message sending)
