@@ -1105,12 +1105,12 @@ export class BaileysManager {
       // Track usage for incoming message
       // Usage tracking removed
 
-      // Publish message event
-      await this.publishEvent(sessionId, 'message.received', {
-        messageId: msg.key.id,
-        from: fromJid,
-        content: messageContent,
-      });
+      // Publish message event - DISABLED: Not critical, webhooks handle this
+      // await this.publishEvent(sessionId, 'message.received', {
+      //   messageId: msg.key.id,
+      //   from: fromJid,
+      //   content: messageContent,
+      // });
 
       // Send webhook notification only if configured
       const session = this.sessions.get(`${organizationId}:${sessionId}`);
@@ -1632,12 +1632,12 @@ export class BaileysManager {
         updatedAt: new Date(),
       });
 
-      // Publish message event
-      await this.publishEvent(sessionId, 'message.sent', {
-        messageId,
-        to,
-        content: { text: content },
-      });
+      // Publish message event - DISABLED: Not critical, already saved to DB
+      // await this.publishEvent(sessionId, 'message.sent', {
+      //   messageId,
+      //   to,
+      //   content: { text: content },
+      // });
     } catch (error) {
       this.fastify.log.error(
         'Failed to save outgoing message:: ' +
