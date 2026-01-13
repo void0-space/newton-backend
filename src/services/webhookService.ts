@@ -277,7 +277,7 @@ export class WebhookService {
   private setupRetryTask() {
     // Run every 5 minutes to check for failed deliveries that need retry
     this.retryTask = cron.schedule(
-      '*/5 * * * *',
+      '*/30 * * * *',
       async () => {
         try {
           const failedDeliveries = await db

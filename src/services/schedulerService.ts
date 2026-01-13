@@ -29,7 +29,7 @@ export class SchedulerService {
       this.processDueMessages().catch(error => {
         console.error('Error processing due messages:', error);
       });
-    }, 60 * 1000); // 1 minute
+    }, 5 * 60 * 1000); // 1 minute
   }
 
   stop() {
