@@ -251,25 +251,34 @@ export class BaileysManager {
   }
 
   async getSession(sessionId: string, organizationId: string): Promise<BaileysSession | null> {
-    // Check in-memory sessions first
+    // 1. Check in-memory sessions first
     const sessionKey = `${organizationId}:${sessionId}`;
     const memorySession = this.sessions.get(sessionKey);
 
-    this.fastify.log.info(
-      `Getting session ${sessionId} for org ${organizationId}: ${JSON.stringify({
-        sessionKey,
-        hasMemorySession: !!memorySession,
-        memorySessionStatus: memorySession?.status,
-        allSessionKeys: Array.from(this.sessions.keys()),
-      })}`
-    );
-
     if (memorySession && memorySession.organizationId === organizationId) {
-      this.fastify.log.info(`Returning memory session with status: ${memorySession.status}`);
       return memorySession;
     }
 
-    // Check database
+    // 2. Check Redis cache
+    const cacheKey = `session:${organizationId}:${sessionId}`;
+    try {
+      const cached = await this.fastify.redis.get(cacheKey);
+      if (cached) {
+        const cachedSession = JSON.parse(cached);
+        // Don't restore socket from cache, just return metadata
+        return {
+          ...cachedSession,
+          socket: null,
+          lastActive: new Date(cachedSession.lastActive),
+          createdAt: cachedSession.createdAt ? new Date(cachedSession.createdAt) : new Date(),
+        };
+      }
+    } catch (cacheError) {
+      this.fastify.log.warn(`Redis cache error for session ${sessionId}:`, cacheError);
+      // Continue to database if cache fails
+    }
+
+    // 3. Check database
     const [dbSession] = await db
       .select()
       .from(whatsappSession)
@@ -282,9 +291,11 @@ export class BaileysManager {
       return null;
     }
 
+    // Cache the database result
+    await this.cacheSession(dbSession);
+
     // Don't restore manually disconnected sessions
     if (dbSession.manuallyDisconnected) {
-      this.fastify.log.info(`Session ${sessionId} is manually disconnected - not restoring`);
       return {
         id: dbSession.id,
         organizationId: dbSession.organizationId,
@@ -383,6 +394,9 @@ export class BaileysManager {
         manuallyDisconnected: true,
       });
       this.fastify.log.info(`Successfully disconnected session ${sessionId} and published event`);
+
+      // Invalidate cache after disconnection
+      await this.invalidateSessionCache(sessionId, organizationId);
 
       // Small delay to ensure database changes are committed
       await new Promise(resolve => setTimeout(resolve, 100));
@@ -1512,6 +1526,53 @@ export class BaileysManager {
       console.error('Error cause:', error instanceof Error ? error.cause : 'none');
 
       // Don't re-throw to prevent breaking the WhatsApp connection flow
+    }
+
+    // Invalidate cache after database update
+    await this.invalidateSessionCache(session.id, session.organizationId);
+  }
+
+  /**
+   * Cache session metadata in Redis
+   * TTL: 300 seconds (5 minutes)
+   */
+  private async cacheSession(session: any): Promise<void> {
+    const cacheKey = `session:${session.organizationId}:${session.id}`;
+    const cacheData = {
+      id: session.id,
+      organizationId: session.organizationId,
+      status: session.status,
+      phoneNumber: session.phoneNumber,
+      profileName: session.profileName,
+      profilePhoto: session.profilePhoto,
+      qrCode: session.qrCode,
+      lastActive: session.lastActive,
+      createdAt: session.createdAt,
+      alwaysShowOnline: session.alwaysShowOnline,
+      autoRejectCalls: session.autoRejectCalls,
+      antiBanSubscribe: session.antiBanSubscribe,
+      antiBanStrictMode: session.antiBanStrictMode,
+      webhookUrl: session.webhookUrl,
+      webhookMethod: session.webhookMethod,
+      manuallyDisconnected: session.manuallyDisconnected,
+    };
+
+    try {
+      await this.fastify.redis.setex(cacheKey, 300, JSON.stringify(cacheData));
+    } catch (error) {
+      this.fastify.log.warn(`Failed to cache session ${session.id}:`, error);
+    }
+  }
+
+  /**
+   * Invalidate session cache in Redis
+   */
+  private async invalidateSessionCache(sessionId: string, organizationId: string): Promise<void> {
+    const cacheKey = `session:${organizationId}:${sessionId}`;
+    try {
+      await this.fastify.redis.del(cacheKey);
+    } catch (error) {
+      this.fastify.log.warn(`Failed to invalidate cache for session ${sessionId}:`, error);
     }
   }
 
