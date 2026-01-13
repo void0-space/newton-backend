@@ -1112,19 +1112,22 @@ export class BaileysManager {
         content: messageContent,
       });
 
-      // Send webhook notification
-      await this.webhookService.sendWebhook(
-        organizationId,
-        'message.received',
-        {
-          messageId: createId(),
-          sessionId,
-          from: fromJid,
-          content: messageContent,
-          timestamp: new Date(Number(msg.messageTimestamp) * 1000).toISOString(),
-        },
-        sessionId
-      );
+      // Send webhook notification only if configured
+      const session = this.sessions.get(`${organizationId}:${sessionId}`);
+      if (session?.webhookUrl) {
+        await this.webhookService.sendWebhook(
+          organizationId,
+          'message.received',
+          {
+            messageId: createId(),
+            sessionId,
+            from: fromJid,
+            content: messageContent,
+            timestamp: new Date(Number(msg.messageTimestamp) * 1000).toISOString(),
+          },
+          sessionId
+        );
+      }
 
       // Process auto reply
       try {
