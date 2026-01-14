@@ -98,11 +98,11 @@ async function start() {
     });
 
     // Register compression for cost optimization (reduces egress by 40-60%)
-    await fastify.register(compress, {
-      global: true,
-      threshold: 512, // Compress responses > 512 bytes
-      encodings: ['gzip', 'deflate']
-    });
+    // await fastify.register(compress, {
+    //   global: true,
+    //   threshold: 512, // Compress responses > 512 bytes
+    //   encodings: ['gzip', 'deflate']
+    // });
 
     await fastify.register(cors, {
       origin: (origin, callback) => {
