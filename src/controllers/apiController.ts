@@ -80,25 +80,27 @@ export async function sendMessage(request: FastifyRequest, reply: FastifyReply) 
     // Get the WhatsApp account ID from API key metadata
     const whatsappAccountId = verifiedKey.key?.metadata?.['accountId'];
 
-    // Find sessions for this organization
-    const sessions = await request.server.baileys.listSessions(organizationId);
-
+    // Use in-memory sessions instead of database query (cost optimization)
     let connectedSession;
     if (whatsappAccountId) {
-      // Use the specific WhatsApp account from API key metadata
-      connectedSession = sessions.find(
-        session => session.id === whatsappAccountId && session.status === 'connected'
-      );
-
-      if (!connectedSession) {
+      // Direct memory lookup - O(1) operation, no database query
+      const sessionKey = `${organizationId}:${whatsappAccountId}`;
+      const session = request.server.baileys.sessions.get(sessionKey);
+      
+      if (session && session.status === 'connected') {
+        connectedSession = session;
+      } else {
         return reply.status(404).send({
           error: `WhatsApp account ${whatsappAccountId} is not connected. Please ensure the account is connected and active.`,
           code: 'WHATSAPP_ACCOUNT_NOT_CONNECTED',
         });
       }
     } else {
-      // Fallback: use the first connected session
-      connectedSession = sessions.find(session => session.status === 'connected');
+      // Fallback: find first connected session from in-memory map
+      const allSessions = Array.from(request.server.baileys.sessions.values());
+      connectedSession = allSessions.find(
+        s => s.organizationId === organizationId && s.status === 'connected'
+      );
 
       if (!connectedSession) {
         return reply.status(404).send({
@@ -131,7 +133,9 @@ export async function sendMessage(request: FastifyRequest, reply: FastifyReply) 
         while (attempts < maxAttempts && !isConnected) {
           await new Promise(resolve => setTimeout(resolve, 500));
 
-          const updatedSession = await request.server.baileys.getSession(session.id, organizationId);
+          // Check in-memory session first (cost optimization)
+          const sessionKey = `${organizationId}:${session.id}`;
+          const updatedSession = request.server.baileys.sessions.get(sessionKey);
 
           if (updatedSession?.status === 'connected') {
             isConnected = true;
@@ -153,7 +157,9 @@ export async function sendMessage(request: FastifyRequest, reply: FastifyReply) 
         }
 
         if (!isConnected) {
-          const finalSession = await request.server.baileys.getSession(session.id, organizationId);
+          // Check final status from memory
+          const sessionKey = `${organizationId}:${session.id}`;
+          const finalSession = request.server.baileys.sessions.get(sessionKey);
           const currentStatus = finalSession?.status || 'unknown';
 
           request.log.error(

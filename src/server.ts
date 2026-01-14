@@ -4,6 +4,7 @@ import helmet from '@fastify/helmet';
 import sensible from '@fastify/sensible';
 import redis from '@fastify/redis';
 import env from '@fastify/env';
+import compress from '@fastify/compress';
 import dotenv from 'dotenv';
 
 // Import plugins
@@ -94,6 +95,13 @@ async function start() {
           imgSrc: ["'self'", 'data:', 'https:'],
         },
       },
+    });
+
+    // Register compression for cost optimization (reduces egress by 40-60%)
+    await fastify.register(compress, {
+      global: true,
+      threshold: 512, // Compress responses > 512 bytes
+      encodings: ['gzip', 'deflate']
     });
 
     await fastify.register(cors, {

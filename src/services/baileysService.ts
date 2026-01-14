@@ -421,11 +421,40 @@ export class BaileysManager {
   }
 
   async listSessions(organizationId: string): Promise<BaileysSession[]> {
-    const dbSessions = await db
-      .select()
-      .from(whatsappSession)
-      .where(eq(whatsappSession.organizationId, organizationId));
+    // 1. Check Redis cache first
+    const cacheKey = `sessions:list:${organizationId}`;
+    let dbSessions: any[] = [];
 
+    try {
+      const cached = await this.fastify.redis.get(cacheKey);
+      if (cached) {
+        this.fastify.log.debug(`Cache hit for sessions list of org ${organizationId}`);
+        dbSessions = JSON.parse(cached);
+      }
+    } catch (cacheError) {
+      this.fastify.log.warn(`Redis cache error for sessions list of org ${organizationId}:`, cacheError);
+      // Continue to database if cache fails
+    }
+
+    // 2. If not in cache, fetch from database
+    if (dbSessions.length === 0) {
+      dbSessions = await db
+        .select()
+        .from(whatsappSession)
+        .where(eq(whatsappSession.organizationId, organizationId));
+
+      // Cache the database result (TTL: 300 seconds / 5 minutes)
+      if (dbSessions.length > 0) {
+        try {
+          await this.fastify.redis.setex(cacheKey, 300, JSON.stringify(dbSessions));
+          this.fastify.log.debug(`Cached sessions list for org ${organizationId}`);
+        } catch (cacheError) {
+          this.fastify.log.warn(`Failed to cache sessions list for org ${organizationId}:`, cacheError);
+        }
+      }
+    }
+
+    // 3. Merge database/cached data with in-memory session data for real-time status
     const result = dbSessions.map(dbSession => {
       const sessionKey = `${organizationId}:${dbSession.id}`;
       const memorySession = this.sessions.get(sessionKey);
@@ -455,8 +484,8 @@ export class BaileysManager {
         phoneNumber: dbSession.phoneNumber || undefined,
         profileName: dbSession.profileName || undefined,
         profilePhoto: dbSession.profilePhoto || undefined,
-        lastActive: dbSession.lastActive || new Date(),
-        createdAt: dbSession.createdAt || new Date(),
+        lastActive: dbSession.lastActive || new Date(dbSession.lastActive),
+        createdAt: dbSession.createdAt || new Date(dbSession.createdAt),
         alwaysShowOnline: dbSession.alwaysShowOnline ?? true,
         autoRejectCalls: dbSession.autoRejectCalls ?? false,
         antiBanSubscribe: dbSession.antiBanSubscribe ?? false,
@@ -1568,11 +1597,19 @@ export class BaileysManager {
 
   /**
    * Invalidate session cache in Redis
+   * Also invalidates the sessions list cache for the organization
    */
   private async invalidateSessionCache(sessionId: string, organizationId: string): Promise<void> {
-    const cacheKey = `session:${organizationId}:${sessionId}`;
     try {
-      await this.fastify.redis.del(cacheKey);
+      // Invalidate individual session cache
+      const sessionCacheKey = `session:${organizationId}:${sessionId}`;
+      await this.fastify.redis.del(sessionCacheKey);
+      
+      // Invalidate sessions list cache for the organization
+      const listCacheKey = `sessions:list:${organizationId}`;
+      await this.fastify.redis.del(listCacheKey);
+      
+      this.fastify.log.debug(`Invalidated cache for session ${sessionId} and sessions list for org ${organizationId}`);
     } catch (error) {
       this.fastify.log.warn(`Failed to invalidate cache for session ${sessionId}:`, error);
     }
