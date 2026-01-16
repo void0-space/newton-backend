@@ -154,108 +154,115 @@ async function start() {
       url: fastify.config.REDIS_URL,
     });
 
-    // Register global analytics middleware hooks directly
-    // Pre-handler to capture request start time
-    fastify.addHook('preHandler', async (request: FastifyRequest, reply) => {
-      // Only track the messages send API endpoint
-      if (request.url !== '/api/v1/messages/send' || request.method !== 'POST') {
-        return;
-      }
+    // ANALYTICS DISABLED - Reduces network egress significantly
+    // Analytics middleware was consuming excessive bandwidth by storing full request/response bodies
+    // If you need to re-enable analytics in the future, uncomment the code below and implement:
+    // 1. Sampling (only log 10% of successful requests)
+    // 2. Payload size limits (max 500 chars for request/response)
+    // 3. Only store failed requests (status >= 400)
 
-      (request as any).analyticsData = {
-        startTime: Date.now(),
-      };
-    });
+    // // Register global analytics middleware hooks directly
+    // // Pre-handler to capture request start time
+    // fastify.addHook('preHandler', async (request: FastifyRequest, reply) => {
+    //   // Only track the messages send API endpoint
+    //   if (request.url !== '/api/v1/messages/send' || request.method !== 'POST') {
+    //     return;
+    //   }
 
-    // Response hook to log the API usage
-    fastify.addHook('onResponse', async (request: FastifyRequest, reply) => {
-      if (!(request as any).analyticsData) return;
+    //   (request as any).analyticsData = {
+    //     startTime: Date.now(),
+    //   };
+    // });
 
-      try {
-        const responseTime = Date.now() - (request as any).analyticsData.startTime;
-        const success = reply.statusCode >= 200 && reply.statusCode < 400;
+    // // Response hook to log the API usage
+    // fastify.addHook('onResponse', async (request: FastifyRequest, reply) => {
+    //   if (!(request as any).analyticsData) return;
 
-        // Extract organization context
-        let organizationId = null;
-        let apiKeyId = null;
-        let whatsappSessionId = null;
+    //   try {
+    //     const responseTime = Date.now() - (request as any).analyticsData.startTime;
+    //     const success = reply.statusCode >= 200 && reply.statusCode < 400;
 
-        if ((request as any).apiKey) {
-          organizationId = (request as any).apiKey.organizationId;
-          apiKeyId = (request as any).apiKey.id;
-          whatsappSessionId = (request as any).apiKey.whatsappAccountId;
-        } else if ((request as any).organization?.id) {
-          organizationId = (request as any).organization.id;
-        }
+    //     // Extract organization context
+    //     let organizationId = null;
+    //     let apiKeyId = null;
+    //     let whatsappSessionId = null;
 
-        if (organizationId) {
-          // Extract message-specific data from request body
-          let requestBody = null;
-          let messageType = null;
-          let recipientNumber = null;
-          let messageId = null;
-          let errorCode = null;
-          let errorMessage = null;
+    //     if ((request as any).apiKey) {
+    //       organizationId = (request as any).apiKey.organizationId;
+    //       apiKeyId = (request as any).apiKey.id;
+    //       whatsappSessionId = (request as any).apiKey.whatsappAccountId;
+    //     } else if ((request as any).organization?.id) {
+    //       organizationId = (request as any).organization.id;
+    //     }
 
-          // Parse request body if available
-          if (request.body && typeof request.body === 'object') {
-            requestBody = request.body;
-            messageType = (request.body as any).type || 'text';
-            recipientNumber = (request.body as any).to;
-          }
+    //     if (organizationId) {
+    //       // Extract message-specific data from request body
+    //       let requestBody = null;
+    //       let messageType = null;
+    //       let recipientNumber = null;
+    //       let messageId = null;
+    //       let errorCode = null;
+    //       let errorMessage = null;
 
-          // Extract response data
-          let responseBody = null;
-          if (reply.getHeader('content-type')?.toString().includes('application/json')) {
-            try {
-              const payload = (reply as any).payload;
-              if (payload && typeof payload === 'string' && payload.length < 5000) {
-                const parsed = JSON.parse(payload);
-                responseBody = parsed;
+    //       // Parse request body if available
+    //       if (request.body && typeof request.body === 'object') {
+    //         requestBody = request.body;
+    //         messageType = (request.body as any).type || 'text';
+    //         recipientNumber = (request.body as any).to;
+    //       }
 
-                if (parsed.messageId) {
-                  messageId = parsed.messageId;
-                }
+    //       // Extract response data
+    //       let responseBody = null;
+    //       if (reply.getHeader('content-type')?.toString().includes('application/json')) {
+    //         try {
+    //           const payload = (reply as any).payload;
+    //           if (payload && typeof payload === 'string' && payload.length < 5000) {
+    //             const parsed = JSON.parse(payload);
+    //             responseBody = parsed;
 
-                if (!success && parsed.error) {
-                  errorMessage = parsed.error;
-                  errorCode = parsed.code;
-                }
-              }
-            } catch (e) {
-              // Ignore parsing errors
-            }
-          }
+    //             if (parsed.messageId) {
+    //               messageId = parsed.messageId;
+    //             }
 
-          const { createId } = await import('@paralleldrive/cuid2');
-          const { db } = await import('./db/drizzle');
-          const { apiUsage } = await import('./db/schema/analytics');
+    //             if (!success && parsed.error) {
+    //               errorMessage = parsed.error;
+    //               errorCode = parsed.code;
+    //             }
+    //           }
+    //         } catch (e) {
+    //           // Ignore parsing errors
+    //         }
+    //       }
 
-          await db.insert(apiUsage).values({
-            id: createId(),
-            organizationId,
-            apiKeyId,
-            whatsappSessionId,
-            endpoint: request.url,
-            method: request.method,
-            statusCode: reply.statusCode,
-            responseTime,
-            requestBody,
-            responseBody,
-            userAgent: request.headers['user-agent'] || null,
-            ipAddress: request.ip,
-            messageType,
-            messageId,
-            recipientNumber,
-            errorCode,
-            errorMessage,
-            success,
-          });
-        }
-      } catch (error) {
-        fastify.log.error('Analytics error:', error);
-      }
-    });
+    //       const { createId } = await import('@paralleldrive/cuid2');
+    //       const { db } = await import('./db/drizzle');
+    //       const { apiUsage } = await import('./db/schema/analytics');
+
+    //       await db.insert(apiUsage).values({
+    //         id: createId(),
+    //         organizationId,
+    //         apiKeyId,
+    //         whatsappSessionId,
+    //         endpoint: request.url,
+    //         method: request.method,
+    //         statusCode: reply.statusCode,
+    //         responseTime,
+    //         requestBody,
+    //         responseBody,
+    //         userAgent: request.headers['user-agent'] || null,
+    //         ipAddress: request.ip,
+    //         messageType,
+    //         messageId,
+    //         recipientNumber,
+    //         errorCode,
+    //         errorMessage,
+    //         success,
+    //       });
+    //     }
+    //   } catch (error) {
+    //     fastify.log.error('Analytics error:', error);
+    //   }
+    // });
 
     // Register auth and middleware plugins
     // await fastify.register(betterAuthPlugin);

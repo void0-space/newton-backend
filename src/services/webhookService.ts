@@ -18,6 +18,12 @@ export class WebhookService {
   private fastify: FastifyInstance;
   private retryTask?: cron.ScheduledTask;
 
+  // Webhook safeguards configuration
+  private readonly RATE_LIMIT_PER_HOUR = 1000; // Max deliveries per org per hour
+  private readonly CIRCUIT_BREAKER_THRESHOLD = 10; // Consecutive failures before disabling
+  private readonly DEDUP_WINDOW_SECONDS = 60; // Deduplication window
+  private readonly MAX_RETRIES = 3; // Reduced from 5 to 3
+
   constructor(fastify: FastifyInstance) {
     this.fastify = fastify;
     this.setupRetryTask();
@@ -25,6 +31,28 @@ export class WebhookService {
 
   async sendWebhook(organizationId: string, event: string, data: any, sessionId?: string) {
     try {
+      // SAFEGUARD 1: Rate limiting - check if org has exceeded hourly limit
+      const rateLimitKey = `webhook:ratelimit:${organizationId}`;
+      const currentCount = await this.fastify.redis.get(rateLimitKey);
+
+      if (currentCount && parseInt(currentCount) >= this.RATE_LIMIT_PER_HOUR) {
+        this.fastify.log.warn(
+          `Webhook rate limit exceeded for organization ${organizationId}: ${currentCount}/${this.RATE_LIMIT_PER_HOUR}`
+        );
+        return; // Skip webhook delivery
+      }
+
+      // SAFEGUARD 2: Deduplication - check if we recently sent this exact webhook
+      const dedupKey = `webhook:dedup:${organizationId}:${event}:${data.messageId || 'unknown'}`;
+      const isDuplicate = await this.fastify.redis.get(dedupKey);
+
+      if (isDuplicate) {
+        this.fastify.log.info(
+          `Skipping duplicate webhook for ${event} (messageId: ${data.messageId})`
+        );
+        return; // Skip duplicate
+      }
+
       // Get all active webhooks for the organization that listen to this event
       const webhooks = await db
         .select()
@@ -45,8 +73,24 @@ export class WebhookService {
           continue;
         }
 
+        // SAFEGUARD 3: Circuit breaker - check if webhook is temporarily disabled
+        const circuitKey = `webhook:circuit:${webhookConfig.id}`;
+        const isCircuitOpen = await this.fastify.redis.get(circuitKey);
+
+        if (isCircuitOpen) {
+          this.fastify.log.warn(`Webhook ${webhookConfig.id} is circuit-broken, skipping delivery`);
+          continue;
+        }
+
         await this.deliverWebhook(webhookConfig, payload);
       }
+
+      // Increment rate limit counter (expires after 1 hour)
+      await this.fastify.redis.incr(rateLimitKey);
+      await this.fastify.redis.expire(rateLimitKey, 3600);
+
+      // Set deduplication key (expires after DEDUP_WINDOW_SECONDS)
+      await this.fastify.redis.setex(dedupKey, this.DEDUP_WINDOW_SECONDS, '1');
     } catch (error) {
       this.fastify.log.error(
         'Error sending webhook: ' + (error instanceof Error ? error.message : String(error))
@@ -201,16 +245,18 @@ export class WebhookService {
           status: response.ok ? 'success' : 'failed',
           lastAttemptAt: new Date(),
           responseStatus: response.status.toString(),
-          responseBody: responseBody.slice(0, 1000), // Limit response body size
+          responseBody: responseBody.slice(0, 200), // REDUCED from 1000 to 200 chars
           updatedAt: new Date(),
         })
         .where(eq(webhookDelivery.id, deliveryId));
 
       if (response.ok) {
         this.fastify.log.info(`Webhook delivered successfully: ${deliveryId}`);
+        // Reset circuit breaker failure counter on success
+        await this.resetCircuitBreaker(webhookConfig.id);
       } else {
         this.fastify.log.warn(`Webhook delivery failed: ${deliveryId}, status: ${response.status}`);
-        await this.scheduleRetry(deliveryId);
+        await this.handleWebhookFailure(webhookConfig.id, deliveryId);
       }
     } catch (error) {
       this.fastify.log.error(`Webhook delivery error: ${deliveryId}`, error);
@@ -222,12 +268,12 @@ export class WebhookService {
           status: 'failed',
           lastAttemptAt: new Date(),
           responseStatus: 'error',
-          responseBody: error instanceof Error ? error.message : 'Unknown error',
+          responseBody: (error instanceof Error ? error.message : 'Unknown error').slice(0, 200),
           updatedAt: new Date(),
         })
         .where(eq(webhookDelivery.id, deliveryId));
 
-      await this.scheduleRetry(deliveryId);
+      await this.handleWebhookFailure(webhookConfig.id, deliveryId);
     }
   }
 
@@ -243,9 +289,11 @@ export class WebhookService {
 
       const attempts = parseInt(delivery.attempts) + 1;
 
-      // Max 5 retry attempts
-      if (attempts > 5) {
-        this.fastify.log.warn(`Max retry attempts reached for webhook delivery: ${deliveryId}`);
+      // REDUCED: Max 3 retry attempts (was 5)
+      if (attempts > this.MAX_RETRIES) {
+        this.fastify.log.warn(
+          `Max retry attempts (${this.MAX_RETRIES}) reached for webhook delivery: ${deliveryId}`
+        );
         return;
       }
 
@@ -332,5 +380,54 @@ export class WebhookService {
 
   async cleanup() {
     this.stopRetryTask();
+  }
+
+  /**
+   * Handle webhook failure - track consecutive failures and trigger circuit breaker
+   */
+  private async handleWebhookFailure(webhookId: string, deliveryId: string) {
+    try {
+      const failureKey = `webhook:failures:${webhookId}`;
+      const failures = await this.fastify.redis.incr(failureKey);
+      await this.fastify.redis.expire(failureKey, 3600); // Expire after 1 hour
+
+      this.fastify.log.info(`Webhook ${webhookId} failure count: ${failures}`);
+
+      // If we've hit the threshold, open the circuit breaker
+      if (failures >= this.CIRCUIT_BREAKER_THRESHOLD) {
+        const circuitKey = `webhook:circuit:${webhookId}`;
+        await this.fastify.redis.setex(circuitKey, 3600, '1'); // Disable for 1 hour
+
+        this.fastify.log.error(
+          `🚨 Circuit breaker OPENED for webhook ${webhookId} after ${failures} consecutive failures. Disabled for 1 hour.`
+        );
+
+        // Mark webhook as inactive in database
+        await db
+          .update(webhook)
+          .set({
+            active: false,
+            updatedAt: new Date(),
+          })
+          .where(eq(webhook.id, webhookId));
+      } else {
+        // Schedule retry if we haven't hit the circuit breaker
+        await this.scheduleRetry(deliveryId);
+      }
+    } catch (error) {
+      this.fastify.log.error(`Error handling webhook failure:`, error);
+    }
+  }
+
+  /**
+   * Reset circuit breaker failure counter on successful delivery
+   */
+  private async resetCircuitBreaker(webhookId: string) {
+    try {
+      const failureKey = `webhook:failures:${webhookId}`;
+      await this.fastify.redis.del(failureKey);
+    } catch (error) {
+      this.fastify.log.error(`Error resetting circuit breaker:`, error);
+    }
   }
 }
