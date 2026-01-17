@@ -17,6 +17,7 @@ export interface WebhookPayload {
 export class WebhookService {
   private fastify: FastifyInstance;
   private retryTask?: cron.ScheduledTask;
+  private cleanupTask?: cron.ScheduledTask;
 
   // Webhook safeguards configuration
   private readonly RATE_LIMIT_PER_HOUR = 999999; // Max deliveries per org per hour
@@ -27,6 +28,7 @@ export class WebhookService {
   constructor(fastify: FastifyInstance) {
     this.fastify = fastify;
     this.setupRetryTask();
+    this.setupCleanupTask();
   }
 
   async sendWebhook(organizationId: string, event: string, data: any, sessionId?: string) {
@@ -371,10 +373,43 @@ export class WebhookService {
     );
   }
 
+  private setupCleanupTask() {
+    // Run every 12 hours to delete old webhook delivery records
+    this.cleanupTask = cron.schedule(
+      '0 */12 * * *',
+      async () => {
+        try {
+          this.fastify.log.info('🧹 Running webhook delivery cleanup...');
+
+          // Delete records older than 7 days
+          const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
+          const result = await db
+            .delete(webhookDelivery)
+            .where(lt(webhookDelivery.createdAt, sevenDaysAgo));
+
+          this.fastify.log.info('✅ Webhook delivery cleanup completed');
+        } catch (error) {
+          this.fastify.log.error(
+            'Error in webhook cleanup task: ' +
+              (error instanceof Error ? error.message : String(error))
+          );
+        }
+      },
+      {
+        scheduled: false, // Don't start immediately
+      }
+    );
+  }
+
   startRetryTask() {
     if (this.retryTask) {
       this.retryTask.start();
       this.fastify.log.info('Webhook retry task started');
+    }
+    if (this.cleanupTask) {
+      this.cleanupTask.start();
+      this.fastify.log.info('Webhook cleanup task started');
     }
   }
 
@@ -382,6 +417,10 @@ export class WebhookService {
     if (this.retryTask) {
       this.retryTask.stop();
       this.fastify.log.info('Webhook retry task stopped');
+    }
+    if (this.cleanupTask) {
+      this.cleanupTask.stop();
+      this.fastify.log.info('Webhook cleanup task stopped');
     }
   }
 

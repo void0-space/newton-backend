@@ -2,6 +2,9 @@ import { FastifyPluginAsync } from 'fastify';
 import fp from 'fastify-plugin';
 import { BaileysManager } from '../services/baileysService';
 import cron from 'node-cron';
+import { db } from '@/db/drizzle';
+import { whatsappSession, webhookDelivery } from '@/db/schema';
+import { eq, lt, and } from 'drizzle-orm';
 
 const baileysPlugin: FastifyPluginAsync = async fastify => {
   // Create Baileys manager instance
@@ -15,14 +18,26 @@ const baileysPlugin: FastifyPluginAsync = async fastify => {
     await baileys.cleanup();
   });
 
-  // Set up periodic cleanup of old sessions (every hour)
+  // Set up periodic cleanup of old WhatsApp sessions (every 12 hours)
   const cleanupTask = cron.schedule(
-    '0 * * * *',
+    '0 */12 * * *', // Run at minute 0 of every 12th hour
     async () => {
       try {
-        fastify.log.info('Running session cleanup...');
-        // Add cleanup logic here if needed
-        // For now, we'll just log
+        fastify.log.info('🧹 Running WhatsApp session cleanup...');
+
+        // Delete sessions that are disconnected and haven't been active in 2 days
+        const twoDaysAgo = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
+
+        const result = await db
+          .delete(whatsappSession)
+          .where(
+            and(
+              eq(whatsappSession.status, 'disconnected'),
+              lt(whatsappSession.lastActive, twoDaysAgo)
+            )
+          );
+
+        fastify.log.info(`✅ Session cleanup completed - deleted old disconnected sessions`);
       } catch (error) {
         fastify.log.error(
           'Error during session cleanup: ' +
@@ -43,10 +58,6 @@ const baileysPlugin: FastifyPluginAsync = async fastify => {
     // AUTO-RECONNECT: Load and reconnect all existing sessions from database
     try {
       fastify.log.info('🔄 Auto-reconnecting existing WhatsApp sessions...');
-
-      const { db } = await import('../db/drizzle');
-      const { whatsappSession } = await import('../db/schema');
-      const { eq } = await import('drizzle-orm');
 
       // Get all sessions from database
       const existingSessions = await db.select().from(whatsappSession);
