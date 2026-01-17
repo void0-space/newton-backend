@@ -2,8 +2,8 @@ import { FastifyPluginAsync } from 'fastify';
 import fp from 'fastify-plugin';
 import { BaileysManager } from '../services/baileysService';
 import cron from 'node-cron';
-import { db } from '@/db/drizzle';
-import { whatsappSession, webhookDelivery } from '@/db/schema';
+import { db } from '../db/drizzle';
+import { whatsappSession } from '../db/schema';
 import { eq, lt, and } from 'drizzle-orm';
 
 const baileysPlugin: FastifyPluginAsync = async fastify => {
