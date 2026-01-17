@@ -19,7 +19,7 @@ export class WebhookService {
   private retryTask?: cron.ScheduledTask;
 
   // Webhook safeguards configuration
-  private readonly RATE_LIMIT_PER_HOUR = 1000; // Max deliveries per org per hour
+  private readonly RATE_LIMIT_PER_HOUR = 999999; // Max deliveries per org per hour
   private readonly CIRCUIT_BREAKER_THRESHOLD = 10; // Consecutive failures before disabling
   private readonly DEDUP_WINDOW_SECONDS = 60; // Deduplication window
   private readonly MAX_RETRIES = 3; // Reduced from 5 to 3
