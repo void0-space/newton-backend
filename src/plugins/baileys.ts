@@ -64,24 +64,21 @@ const baileysPlugin: FastifyPluginAsync = async fastify => {
 
       fastify.log.info(`Found ${existingSessions.length} existing sessions in database`);
 
-      // Reconnect each session
-      for (const dbSession of existingSessions) {
-        try {
-          fastify.log.info(
-            `Reconnecting session: ${dbSession.id} (org: ${dbSession.organizationId})`
-          );
+      // Reconnect all sessions in parallel
+      await Promise.allSettled(
+        existingSessions
+          .filter(dbSession => !dbSession.manuallyDisconnected)
+          .map(async dbSession => {
+            fastify.log.info(
+              `Reconnecting session: ${dbSession.id} (org: ${dbSession.organizationId})`
+            );
 
-          // Use the existing createSession method which handles reconnection
-          await baileys.createSession(dbSession.organizationId, dbSession.id);
+            // getSession will call restoreSession internally if session is not in memory
+            await baileys.getSession(dbSession.id, dbSession.organizationId);
 
-          fastify.log.info(`✅ Successfully reconnected session: ${dbSession.id}`);
-        } catch (error) {
-          fastify.log.error(
-            `❌ Failed to reconnect session ${dbSession.id}: ${error instanceof Error ? error.message : String(error)}`
-          );
-          // Continue with other sessions even if one fails
-        }
-      }
+            fastify.log.info(`✅ Triggered reconnection for session: ${dbSession.id}`);
+          })
+      );
 
       fastify.log.info('✅ Auto-reconnection completed');
     } catch (error) {
