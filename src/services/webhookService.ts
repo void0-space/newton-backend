@@ -1,7 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { db } from '../db/drizzle';
 import { webhook, webhookDelivery, whatsappSession } from '../db/schema';
-import { eq, and, lt } from 'drizzle-orm';
+import { eq, and, lt, gt } from 'drizzle-orm';
 import { createId } from '@paralleldrive/cuid2';
 import crypto from 'crypto';
 import cron from 'node-cron';
@@ -328,15 +328,22 @@ export class WebhookService {
       '*/30 * * * *',
       async () => {
         try {
+          // OPTIMIZATION: Only query recent failed deliveries (last 24 hours)
+          // This prevents querying the entire table every 30 minutes
+          const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
           const failedDeliveries = await db
             .select()
             .from(webhookDelivery)
             .where(
               and(
                 eq(webhookDelivery.status, 'failed'),
-                lt(webhookDelivery.nextAttemptAt, new Date())
+                lt(webhookDelivery.nextAttemptAt, new Date()),
+                // Only retry deliveries from last 24 hours
+                gt(webhookDelivery.createdAt, oneDayAgo)
               )
-            );
+            )
+            .limit(100); // Limit to 100 retries per run
 
           for (const delivery of failedDeliveries) {
             this.fastify.log.info(`Retrying webhook delivery: ${delivery.id}`);
