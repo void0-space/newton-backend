@@ -327,6 +327,9 @@ export async function getWebhookDeliveries(request: FastifyRequest, reply: Fasti
     const { id } = paramsSchema.parse(request.params);
     const { limit = 50, offset = 0 } = querySchema.parse(request.query);
 
+    // HARD LIMIT: Prevent excessive data pulls that cause high egress
+    const safeLimit = Math.min(limit, 100); // Max 100 records per request
+
     // Verify webhook belongs to organization
     const [webhookData] = await db
       .select()
@@ -345,12 +348,33 @@ export async function getWebhookDeliveries(request: FastifyRequest, reply: Fasti
       .from(webhookDelivery)
       .where(eq(webhookDelivery.webhookId, id))
       .orderBy(desc(webhookDelivery.createdAt))
-      .limit(limit)
+      .limit(safeLimit) // Use safe limit instead of raw limit
       .offset(offset);
+
+    // Log endpoint usage for monitoring
+    request.log.info(
+      {
+        endpoint: 'getWebhookDeliveries',
+        webhookId: id,
+        requestedLimit: limit,
+        safeLimit,
+        offset,
+        resultCount: deliveries.length,
+        organizationId,
+      },
+      'Webhook deliveries fetched'
+    );
 
     return reply.send({
       success: true,
       data: deliveries,
+      meta: {
+        limit: safeLimit,
+        offset,
+        count: deliveries.length,
+        // Note: If count equals safeLimit, there may be more records available
+        hasMore: deliveries.length === safeLimit,
+      },
     });
   } catch (error) {
     if (error instanceof z.ZodError) {
