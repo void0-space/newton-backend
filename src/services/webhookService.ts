@@ -69,23 +69,28 @@ export class WebhookService {
         sessionId,
       };
 
-      for (const webhookConfig of webhooks) {
-        // Check if this webhook is configured for this event
-        if (webhookConfig.events && !webhookConfig.events.includes(event)) {
-          continue;
-        }
+      // Execute all webhooks in parallel so one slow webhook doesn't block others
+      await Promise.allSettled(
+        webhooks.map(async webhookConfig => {
+          // Check if this webhook is configured for this event
+          if (webhookConfig.events && !webhookConfig.events.includes(event)) {
+            return;
+          }
 
-        // SAFEGUARD 3: Circuit breaker - check if webhook is temporarily disabled
-        const circuitKey = `webhook:circuit:${webhookConfig.id}`;
-        const isCircuitOpen = await this.fastify.redis.get(circuitKey);
+          // SAFEGUARD 3: Circuit breaker - check if webhook is temporarily disabled
+          const circuitKey = `webhook:circuit:${webhookConfig.id}`;
+          const isCircuitOpen = await this.fastify.redis.get(circuitKey);
 
-        if (isCircuitOpen) {
-          this.fastify.log.warn(`Webhook ${webhookConfig.id} is circuit-broken, skipping delivery`);
-          continue;
-        }
+          if (isCircuitOpen) {
+            this.fastify.log.warn(
+              `Webhook ${webhookConfig.id} is circuit-broken, skipping delivery`
+            );
+            return;
+          }
 
-        await this.deliverWebhook(webhookConfig, payload);
-      }
+          await this.deliverWebhook(webhookConfig, payload);
+        })
+      );
 
       // Increment rate limit counter (expires after 1 hour)
       await this.fastify.redis.incr(rateLimitKey);
@@ -105,6 +110,10 @@ export class WebhookService {
     const payloadString = JSON.stringify(payload);
 
     try {
+      this.fastify.log.info(
+        `Starting webhook delivery ${deliveryId} to ${webhookConfig.url} (Event: ${payload.event})`
+      );
+
       // Save delivery record
       await db.insert(webhookDelivery).values({
         id: deliveryId,
@@ -125,6 +134,9 @@ export class WebhookService {
   }
 
   private async attemptDelivery(deliveryId: string, webhookConfig: any, payloadString: string) {
+    let controller: AbortController | null = null;
+    let timeoutId: NodeJS.Timeout | null = null;
+
     try {
       const payload = JSON.parse(payloadString);
       const headers: Record<string, string> = {
@@ -136,12 +148,9 @@ export class WebhookService {
       let url = webhookConfig.url;
       let body: string | undefined = undefined;
 
+      // ... (webhook type handling logic unchanged)
       // Handle different webhook types (default to 'body' if not set)
       const webhookType = webhookConfig.type || 'body';
-
-      this.fastify.log.info(
-        `Webhook type: ${webhookType}, webhook config type: ${webhookConfig.type}`
-      );
 
       if (webhookType === 'parameter') {
         // Send data as URL query parameters
@@ -216,9 +225,6 @@ export class WebhookService {
         }
 
         url = `${webhookConfig.url}?${params.toString()}`;
-
-        // Log for debugging
-        this.fastify.log.info(`Webhook Parameter Mode - URL: ${url}`);
       } else {
         // Send data in request body (default behavior)
         headers['Content-Type'] = 'application/json';
@@ -231,11 +237,15 @@ export class WebhookService {
         headers['X-Webhook-Signature'] = signature;
       }
 
+      // Use AbortController for better compatibility and control
+      controller = new AbortController();
+      timeoutId = setTimeout(() => controller?.abort(), 30000); // 30 second timeout
+
       const response = await fetch(url, {
         method: 'POST',
         headers,
         ...(body && { body }),
-        signal: AbortSignal.timeout(30000), // 30 second timeout
+        signal: controller.signal,
       });
 
       const responseBody = await response.text();
@@ -253,15 +263,19 @@ export class WebhookService {
         .where(eq(webhookDelivery.id, deliveryId));
 
       if (response.ok) {
-        this.fastify.log.info(`Webhook delivered successfully: ${deliveryId}`);
-        // Reset circuit breaker failure counter on success
+        this.fastify.log.info(`✅ Webhook delivered: ${deliveryId} (${response.status})`);
         await this.resetCircuitBreaker(webhookConfig.id);
       } else {
-        this.fastify.log.warn(`Webhook delivery failed: ${deliveryId}, status: ${response.status}`);
+        this.fastify.log.warn(
+          `⚠️ Webhook returned error: ${deliveryId} (Status: ${response.status})`
+        );
         await this.handleWebhookFailure(webhookConfig.id, deliveryId);
       }
     } catch (error) {
-      this.fastify.log.error(`Webhook delivery error: ${deliveryId}`, error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      this.fastify.log.error(
+        `❌ Webhook delivery FAILED: ${deliveryId} to ${webhookConfig.url}\nReason: ${errorMessage}`
+      );
 
       // Update delivery record with error
       await db
@@ -270,12 +284,14 @@ export class WebhookService {
           status: 'failed',
           lastAttemptAt: new Date(),
           responseStatus: 'error',
-          responseBody: (error instanceof Error ? error.message : 'Unknown error').slice(0, 200),
+          responseBody: errorMessage.slice(0, 200),
           updatedAt: new Date(),
         })
         .where(eq(webhookDelivery.id, deliveryId));
 
       await this.handleWebhookFailure(webhookConfig.id, deliveryId);
+    } finally {
+      if (timeoutId) clearTimeout(timeoutId);
     }
   }
 
