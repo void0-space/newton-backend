@@ -1180,17 +1180,18 @@ export class BaileysManager {
       // Track usage for incoming message
       // Usage tracking removed
 
-      // Publish message event - DISABLED: Not critical, webhooks handle this
-      // await this.publishEvent(sessionId, 'message.received', {
-      //   messageId: msg.key.id,
-      //   from: fromJid,
-      //   content: messageContent,
-      // });
+      // Publish m  essage event
+      await this.publishEvent(sessionId, 'message.received', {
+        messageId: msg.key.id,
+        from: fromJid,
+        content: messageContent,
+      });
 
       // Send webhook notification
       // Note: Webhook configuration is in the database 'webhook' table,
       // not in session.webhookUrl. The webhookService handles the lookup.
-      await this.webhookService.sendWebhook(
+      // OPTIMIZATION: Don't await webhook delivery to prevent blocking message processing
+      this.webhookService.sendWebhook(
         organizationId,
         'message.received',
         {
