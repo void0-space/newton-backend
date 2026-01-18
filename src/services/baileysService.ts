@@ -1154,6 +1154,7 @@ export class BaileysManager {
       };
 
       console.log(`📝 Message content:`, {
+        id: msg.key.id,
         text: messageContent.text,
         type: messageContent.type,
         from: fromJid,
