@@ -69,8 +69,9 @@ export class WebhookService {
         sessionId,
       };
 
-      // Execute all webhooks in parallel so one slow webhook doesn't block others
-      await Promise.allSettled(
+      // Execute all webhooks in parallel (fire-and-forget)
+      // Don't await - let them run in background to avoid blocking message processing
+      Promise.allSettled(
         webhooks.map(async webhookConfig => {
           // Check if this webhook is configured for this event
           if (webhookConfig.events && !webhookConfig.events.includes(event)) {
@@ -90,7 +91,10 @@ export class WebhookService {
 
           await this.deliverWebhook(webhookConfig, payload);
         })
-      );
+      ).catch(err => {
+        // Log any unhandled errors from the background webhooks
+        this.fastify.log.error('Unhandled error in webhook delivery:', err);
+      });
 
       // Increment rate limit counter (expires after 1 hour)
       await this.fastify.redis.incr(rateLimitKey);
