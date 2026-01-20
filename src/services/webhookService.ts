@@ -32,81 +32,70 @@ export class WebhookService {
   }
 
   async sendWebhook(organizationId: string, event: string, data: any, sessionId?: string) {
-    try {
-      // SAFEGUARD 1: Rate limiting - check if org has exceeded hourly limit
-      const rateLimitKey = `webhook:ratelimit:${organizationId}`;
-      const currentCount = await this.fastify.redis.get(rateLimitKey);
+    // CRITICAL: This method MUST return immediately to avoid blocking message processing
+    // All logic runs in background via setImmediate
+    setImmediate(async () => {
+      try {
+        // SAFEGUARD: Deduplication - check if we recently sent this exact webhook
+        const dedupKey = `webhook:dedup:${organizationId}:${event}:${data.messageId || 'unknown'}`;
+        const isDuplicate = await this.fastify.redis.get(dedupKey);
 
-      if (currentCount && parseInt(currentCount) >= this.RATE_LIMIT_PER_HOUR) {
-        this.fastify.log.warn(
-          `Webhook rate limit exceeded for organization ${organizationId}: ${currentCount}/${this.RATE_LIMIT_PER_HOUR}`
+        if (isDuplicate) {
+          this.fastify.log.info(
+            `Skipping duplicate webhook for ${event} (messageId: ${data.messageId})`
+          );
+          return; // Skip duplicate
+        }
+
+        // Get all active webhooks for the organization that listen to this event
+        const webhooks = await db
+          .select()
+          .from(webhook)
+          .where(and(eq(webhook.organizationId, organizationId), eq(webhook.active, true)));
+
+        const payload: WebhookPayload = {
+          event,
+          data,
+          timestamp: new Date().toISOString(),
+          organizationId,
+          sessionId,
+        };
+
+        // Execute all webhooks in parallel (fire-and-forget)
+        // Don't await - let them run in background to avoid blocking message processing
+        Promise.allSettled(
+          webhooks.map(async webhookConfig => {
+            // Check if this webhook is configured for this event
+            if (webhookConfig.events && !webhookConfig.events.includes(event)) {
+              return;
+            }
+
+            // SAFEGUARD: Circuit breaker - check if webhook is temporarily disabled
+            const circuitKey = `webhook:circuit:${webhookConfig.id}`;
+            const isCircuitOpen = await this.fastify.redis.get(circuitKey);
+
+            if (isCircuitOpen) {
+              this.fastify.log.warn(
+                `Webhook ${webhookConfig.id} is circuit-broken, skipping delivery`
+              );
+              return;
+            }
+
+            await this.deliverWebhook(webhookConfig, payload);
+          })
+        ).catch(err => {
+          // Log any unhandled errors from the background webhooks
+          this.fastify.log.error('Unhandled error in webhook delivery:', err);
+        });
+
+        // Set deduplication key (expires after DEDUP_WINDOW_SECONDS)
+        await this.fastify.redis.setex(dedupKey, this.DEDUP_WINDOW_SECONDS, '1');
+      } catch (error) {
+        this.fastify.log.error(
+          'Error sending webhook: ' + (error instanceof Error ? error.message : String(error))
         );
-        return; // Skip webhook delivery
       }
-
-      // SAFEGUARD 2: Deduplication - check if we recently sent this exact webhook
-      const dedupKey = `webhook:dedup:${organizationId}:${event}:${data.messageId || 'unknown'}`;
-      const isDuplicate = await this.fastify.redis.get(dedupKey);
-
-      if (isDuplicate) {
-        this.fastify.log.info(
-          `Skipping duplicate webhook for ${event} (messageId: ${data.messageId})`
-        );
-        return; // Skip duplicate
-      }
-
-      // Get all active webhooks for the organization that listen to this event
-      const webhooks = await db
-        .select()
-        .from(webhook)
-        .where(and(eq(webhook.organizationId, organizationId), eq(webhook.active, true)));
-
-      const payload: WebhookPayload = {
-        event,
-        data,
-        timestamp: new Date().toISOString(),
-        organizationId,
-        sessionId,
-      };
-
-      // Execute all webhooks in parallel (fire-and-forget)
-      // Don't await - let them run in background to avoid blocking message processing
-      Promise.allSettled(
-        webhooks.map(async webhookConfig => {
-          // Check if this webhook is configured for this event
-          if (webhookConfig.events && !webhookConfig.events.includes(event)) {
-            return;
-          }
-
-          // SAFEGUARD 3: Circuit breaker - check if webhook is temporarily disabled
-          const circuitKey = `webhook:circuit:${webhookConfig.id}`;
-          const isCircuitOpen = await this.fastify.redis.get(circuitKey);
-
-          if (isCircuitOpen) {
-            this.fastify.log.warn(
-              `Webhook ${webhookConfig.id} is circuit-broken, skipping delivery`
-            );
-            return;
-          }
-
-          await this.deliverWebhook(webhookConfig, payload);
-        })
-      ).catch(err => {
-        // Log any unhandled errors from the background webhooks
-        this.fastify.log.error('Unhandled error in webhook delivery:', err);
-      });
-
-      // Increment rate limit counter (expires after 1 hour)
-      await this.fastify.redis.incr(rateLimitKey);
-      await this.fastify.redis.expire(rateLimitKey, 3600);
-
-      // Set deduplication key (expires after DEDUP_WINDOW_SECONDS)
-      await this.fastify.redis.setex(dedupKey, this.DEDUP_WINDOW_SECONDS, '1');
-    } catch (error) {
-      this.fastify.log.error(
-        'Error sending webhook: ' + (error instanceof Error ? error.message : String(error))
-      );
-    }
+    });
   }
 
   private async deliverWebhook(webhookConfig: any, payload: WebhookPayload) {
