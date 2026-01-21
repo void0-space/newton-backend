@@ -356,19 +356,22 @@ export class WebhookService {
             )
             .limit(100); // Limit to 100 retries per run
 
-          for (const delivery of failedDeliveries) {
-            this.fastify.log.info(`Retrying webhook delivery: ${delivery.id}`);
+          // Process retries in parallel to avoid blocking
+          await Promise.allSettled(
+            failedDeliveries.map(async delivery => {
+              this.fastify.log.info(`Retrying webhook delivery: ${delivery.id}`);
 
-            const [webhookConfig] = await db
-              .select()
-              .from(webhook)
-              .where(eq(webhook.id, delivery.webhookId))
-              .limit(1);
+              const [webhookConfig] = await db
+                .select()
+                .from(webhook)
+                .where(eq(webhook.id, delivery.webhookId))
+                .limit(1);
 
-            if (webhookConfig && webhookConfig.active) {
-              await this.attemptDelivery(delivery.id, webhookConfig, delivery.payload);
-            }
-          }
+              if (webhookConfig && webhookConfig.active) {
+                await this.attemptDelivery(delivery.id, webhookConfig, delivery.payload);
+              }
+            })
+          );
         } catch (error) {
           this.fastify.log.error(
             'Error in webhook retry task: ' +
