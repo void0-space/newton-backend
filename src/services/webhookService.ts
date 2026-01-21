@@ -70,17 +70,7 @@ export class WebhookService {
               return;
             }
 
-            // SAFEGUARD: Circuit breaker - check if webhook is temporarily disabled
-            const circuitKey = `webhook:circuit:${webhookConfig.id}`;
-            const isCircuitOpen = await this.fastify.redis.get(circuitKey);
-
-            if (isCircuitOpen) {
-              this.fastify.log.warn(
-                `Webhook ${webhookConfig.id} is circuit-broken, skipping delivery`
-              );
-              return;
-            }
-
+            // Deliver webhook directly without circuit breaker checks
             await this.deliverWebhook(webhookConfig, payload);
           })
         ).catch(err => {
@@ -441,37 +431,12 @@ export class WebhookService {
   }
 
   /**
-   * Handle webhook failure - track consecutive failures and trigger circuit breaker
+   * Handle webhook failure - schedule retry
    */
   private async handleWebhookFailure(webhookId: string, deliveryId: string) {
     try {
-      const failureKey = `webhook:failures:${webhookId}`;
-      const failures = await this.fastify.redis.incr(failureKey);
-      await this.fastify.redis.expire(failureKey, 3600); // Expire after 1 hour
-
-      this.fastify.log.info(`Webhook ${webhookId} failure count: ${failures}`);
-
-      // If we've hit the threshold, open the circuit breaker
-      if (failures >= this.CIRCUIT_BREAKER_THRESHOLD) {
-        const circuitKey = `webhook:circuit:${webhookId}`;
-        await this.fastify.redis.setex(circuitKey, 3600, '1'); // Disable for 1 hour
-
-        this.fastify.log.error(
-          `🚨 Circuit breaker OPENED for webhook ${webhookId} after ${failures} consecutive failures. Disabled for 1 hour.`
-        );
-
-        // Mark webhook as inactive in database
-        await db
-          .update(webhook)
-          .set({
-            active: false,
-            updatedAt: new Date(),
-          })
-          .where(eq(webhook.id, webhookId));
-      } else {
-        // Schedule retry if we haven't hit the circuit breaker
-        await this.scheduleRetry(deliveryId);
-      }
+      // Just schedule retry, no circuit breaker
+      await this.scheduleRetry(deliveryId);
     } catch (error) {
       this.fastify.log.error(`Error handling webhook failure:`, error);
     }
@@ -479,13 +444,9 @@ export class WebhookService {
 
   /**
    * Reset circuit breaker failure counter on successful delivery
+   * (Kept for compatibility but does nothing now)
    */
   private async resetCircuitBreaker(webhookId: string) {
-    try {
-      const failureKey = `webhook:failures:${webhookId}`;
-      await this.fastify.redis.del(failureKey);
-    } catch (error) {
-      this.fastify.log.error(`Error resetting circuit breaker:`, error);
-    }
+    // Circuit breaker removed - this is a no-op
   }
 }
