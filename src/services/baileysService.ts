@@ -1206,22 +1206,33 @@ export class BaileysManager {
       );
 
       // Process auto reply
-      try {
-        const incomingMessage = {
-          messageId: msg.key.id || createId(),
-          from: fromJid,
-          text: messageContent.text || '',
-          whatsappAccountId: sessionId,
-          organizationId,
-          timestamp: new Date(Number(msg.messageTimestamp) * 1000),
-        };
+      // SAFEGUARD: Only process auto-replies for direct messages (DMs)
+      // Ignore:
+      // 1. Messages sent by me (to prevent loops)
+      // 2. Group messages (@g.us)
+      // 3. Broadcast/Status messages (@broadcast)
+      const isGroup = fromJid.endsWith('@g.us');
+      const isBroadcast = fromJid.endsWith('@broadcast') || fromJid === 'status@broadcast';
+      const isFromMe = msg.key.fromMe || false;
 
-        await this.autoReplyService.processIncomingMessage(incomingMessage);
-      } catch (autoReplyError) {
-        this.fastify.log.warn(
-          'Failed to process auto reply for incoming message: ' +
-            (autoReplyError instanceof Error ? autoReplyError.message : String(autoReplyError))
-        );
+      if (!isGroup && !isBroadcast && !isFromMe) {
+        try {
+          const incomingMessage = {
+            messageId: msg.key.id || createId(),
+            from: fromJid,
+            text: messageContent.text || '',
+            whatsappAccountId: sessionId,
+            organizationId,
+            timestamp: new Date(Number(msg.messageTimestamp) * 1000),
+          };
+
+          await this.autoReplyService.processIncomingMessage(incomingMessage);
+        } catch (autoReplyError) {
+          this.fastify.log.warn(
+            'Failed to process auto reply for incoming message: ' +
+              (autoReplyError instanceof Error ? autoReplyError.message : String(autoReplyError))
+          );
+        }
       }
     } catch (error) {
       this.fastify.log.error(
