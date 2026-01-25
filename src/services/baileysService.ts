@@ -1192,7 +1192,6 @@ export class BaileysManager {
       // Note: Webhook configuration is in the database 'webhook' table,
       // not in session.webhookUrl. The webhookService handles the lookup.
       // OPTIMIZATION: Don't await webhook delivery to prevent blocking message processing
-      const webhookStartTime = Date.now();
       this.webhookService.sendWebhook(
         organizationId,
         'message.received',
@@ -1205,8 +1204,6 @@ export class BaileysManager {
         },
         sessionId
       );
-      const webhookCallDuration = Date.now() - webhookStartTime;
-      this.fastify.log.info(`⏱️ sendWebhook() call took ${webhookCallDuration}ms (should be <5ms)`);
 
       // Process auto reply
       try {
