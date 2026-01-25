@@ -907,6 +907,23 @@ export class BaileysManager {
     }
 
     try {
+      // CLEANUP: Close existing socket if it exists to prevent duplicate listeners
+      if (session.socket) {
+        try {
+          this.fastify.log.info(
+            `Closing existing socket for session ${sessionId} before recreation`
+          );
+          session.socket.end(undefined);
+          session.socket.ev.removeAllListeners('messages.upsert');
+          session.socket.ev.removeAllListeners('connection.update');
+          session.socket.ev.removeAllListeners('creds.update');
+          // Or just remove all (safest)
+          session.socket.ev.removeAllListeners();
+        } catch (cleanupError) {
+          this.fastify.log.warn(`Error cleanup old socket for session ${sessionId}:`, cleanupError);
+        }
+      }
+
       const ns = `baileys:${sessionId}`;
       const auth = await createDrizzleAuthState(ns, this.fastify.log);
 
@@ -1029,6 +1046,13 @@ export class BaileysManager {
 
     if (!session) {
       this.fastify.log.warn(`Session ${sessionId} not found for message handling`);
+      return;
+    }
+
+    // IGNORE 'append' events (history syncs) to prevent processing duplications
+    // Only process 'notify' (new messages) or messages explicitly from me
+    if (messageUpdate.type === 'append' && !messageUpdate.messages[0]?.key?.fromMe) {
+      this.fastify.log.debug(`Ignoring 'append' message event for session ${sessionId}`);
       return;
     }
 
