@@ -1220,7 +1220,7 @@ export class BaileysManager {
         organizationId,
         'message.received',
         {
-          messageId: createId(),
+          messageId: msg.key.id, // STABLE: Use actual WhatsApp ID for deduplication
           sessionId,
           from: fromJid,
           content: messageContent,
