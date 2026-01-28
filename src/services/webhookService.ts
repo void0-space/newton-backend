@@ -21,7 +21,8 @@ export class WebhookService {
 
   // Webhook safeguards configuration
   private readonly RATE_LIMIT_PER_HOUR = 999999; // Max deliveries per org per hour
-  private readonly CIRCUIT_BREAKER_THRESHOLD = 10; // Consecutive failures before disabling
+  private readonly CIRCUIT_BREAKER_THRESHOLD = 50; // Consecutive failures before disabling (high tolerance for critical webhooks)
+  private readonly CIRCUIT_BREAKER_COOLDOWN_SECONDS = 900; // 15 minutes cooldown (was 1 hour)
   private readonly DEDUP_WINDOW_SECONDS = 60; // Deduplication window
   private readonly MAX_RETRIES = 3; // Reduced from 5 to 3
 
@@ -454,20 +455,15 @@ export class WebhookService {
       // If we've hit the threshold, open the circuit breaker
       if (failures >= this.CIRCUIT_BREAKER_THRESHOLD) {
         const circuitKey = `webhook:circuit:${webhookId}`;
-        await this.fastify.redis.setex(circuitKey, 3600, '1'); // Disable for 1 hour
+        await this.fastify.redis.setex(circuitKey, this.CIRCUIT_BREAKER_COOLDOWN_SECONDS, '1');
 
         this.fastify.log.error(
-          `🚨 Circuit breaker OPENED for webhook ${webhookId} after ${failures} consecutive failures. Disabled for 1 hour.`
+          `🚨 Circuit breaker OPENED for webhook ${webhookId} after ${failures} consecutive failures. ` +
+            `Temporarily disabled for ${this.CIRCUIT_BREAKER_COOLDOWN_SECONDS / 60} minutes (auto-recovers).`
         );
 
-        // Mark webhook as inactive in database
-        await db
-          .update(webhook)
-          .set({
-            active: false,
-            updatedAt: new Date(),
-          })
-          .where(eq(webhook.id, webhookId));
+        // DO NOT disable in database - let it auto-recover after cooldown
+        // This prevents webhooks from getting stuck in disabled state
       } else {
         // Schedule retry if we haven't hit the circuit breaker
         await this.scheduleRetry(deliveryId);
