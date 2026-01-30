@@ -86,7 +86,7 @@ export async function sendMessage(request: FastifyRequest, reply: FastifyReply) 
       // Direct memory lookup - O(1) operation, no database query
       const sessionKey = `${organizationId}:${whatsappAccountId}`;
       const session = request.server.baileys.sessions.get(sessionKey);
-      
+
       if (session && session.status === 'connected') {
         connectedSession = session;
       } else {
@@ -140,7 +140,9 @@ export async function sendMessage(request: FastifyRequest, reply: FastifyReply) 
           if (updatedSession?.status === 'connected') {
             isConnected = true;
             session = updatedSession;
-            request.log.info(`API: Successfully reconnected session ${session.id} after ${(attempts + 1) * 500}ms`);
+            request.log.info(
+              `API: Successfully reconnected session ${session.id} after ${(attempts + 1) * 500}ms`
+            );
             break;
           } else if (updatedSession?.status === 'qr_required') {
             return reply.status(400).send({
@@ -193,9 +195,7 @@ export async function sendMessage(request: FastifyRequest, reply: FastifyReply) 
         session = refreshedSession;
         request.log.info(`API: Session socket loaded successfully`);
       } else {
-        request.log.error(
-          `API: Session ${session.id} has no socket available`
-        );
+        request.log.error(`API: Session ${session.id} has no socket available`);
         return reply.status(503).send({
           error:
             'WhatsApp session socket is not initialized. Please reconnect the WhatsApp account from the dashboard.',
@@ -283,38 +283,40 @@ export async function sendMessage(request: FastifyRequest, reply: FastifyReply) 
 
     request.log.info('API: Sending message with content:' + ' (details logged)');
 
-    // Send message via Baileys
-    const result = await session.socket.sendMessage(to, messageContent);
-
-    request.log.info('API: Message sent successfully:' + ' (details logged)');
-
-    // Generate message ID for database
+    // Generate message ID for database BEFORE sending
     const messageId = createId();
 
-    // Save outgoing message to database
-    await request.server.baileys.saveOutgoingMessage(
-      organizationId,
-      session.id,
-      messageId,
-      to,
-      messageText || caption || 'media',
-      result
-    );
+    // FIRE-AND-FORGET: Send message asynchronously to prevent blocking the API response
+    // Return immediately to client, actual sending happens in background
+    setImmediate(async () => {
+      try {
+        // Send message via Baileys
+        const result = await session.socket.sendMessage(to, messageContent);
 
-    // Usage tracking removed
-    try {
-      // Billing tracking removed
-    } catch (usageError) {
-      request.log.warn(
-        'API: Failed to track usage: ' +
-          (usageError instanceof Error ? usageError.message : String(usageError))
-      );
-    }
+        request.log.info('API: Message sent successfully:' + ' (details logged)');
 
+        // Save outgoing message to database
+        await request.server.baileys.saveOutgoingMessage(
+          organizationId,
+          session.id,
+          messageId,
+          to,
+          messageText || caption || 'media',
+          result
+        );
+      } catch (sendError) {
+        request.log.error(
+          'API: Background message send failed: ' +
+            (sendError instanceof Error ? sendError.message : String(sendError))
+        );
+      }
+    });
+
+    // Return immediately with pending status
     return reply.send({
       success: true,
-      messageId: result?.key?.id,
-      status: result?.status || 'sent',
+      messageId: messageId,
+      status: 'pending', // Will be updated to 'sent' once background send completes
       to,
       sessionId: session.id,
       timestamp: new Date().toISOString(),
