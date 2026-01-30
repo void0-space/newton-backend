@@ -283,40 +283,47 @@ export async function sendMessage(request: FastifyRequest, reply: FastifyReply) 
 
     request.log.info('API: Sending message with content:' + ' (details logged)');
 
-    // Generate message ID for database BEFORE sending
+    // Send message via Baileys with timeout protection
+    let result;
+    try {
+      // Add timeout to prevent infinite blocking (30 seconds max)
+      const sendPromise = session.socket.sendMessage(to, messageContent);
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Message send timeout after 30s')), 30000)
+      );
+
+      result = await Promise.race([sendPromise, timeoutPromise]);
+      request.log.info('API: Message sent successfully');
+    } catch (sendError) {
+      request.log.error(
+        'API: Message send failed: ' +
+          (sendError instanceof Error ? sendError.message : String(sendError))
+      );
+
+      return reply.status(500).send({
+        error: 'Failed to send message',
+        code: 'SEND_FAILED',
+        details: sendError instanceof Error ? sendError.message : 'Unknown error',
+      });
+    }
+
+    // Generate message ID for database
     const messageId = createId();
 
-    // FIRE-AND-FORGET: Send message asynchronously to prevent blocking the API response
-    // Return immediately to client, actual sending happens in background
-    setImmediate(async () => {
-      try {
-        // Send message via Baileys
-        const result = await session.socket.sendMessage(to, messageContent);
+    // Save outgoing message to database
+    await request.server.baileys.saveOutgoingMessage(
+      organizationId,
+      session.id,
+      messageId,
+      to,
+      messageText || caption || 'media',
+      result
+    );
 
-        request.log.info('API: Message sent successfully:' + ' (details logged)');
-
-        // Save outgoing message to database
-        await request.server.baileys.saveOutgoingMessage(
-          organizationId,
-          session.id,
-          messageId,
-          to,
-          messageText || caption || 'media',
-          result
-        );
-      } catch (sendError) {
-        request.log.error(
-          'API: Background message send failed: ' +
-            (sendError instanceof Error ? sendError.message : String(sendError))
-        );
-      }
-    });
-
-    // Return immediately with pending status
     return reply.send({
       success: true,
-      messageId: messageId,
-      status: 'pending', // Will be updated to 'sent' once background send completes
+      messageId: result?.key?.id,
+      status: result?.status || 'sent',
       to,
       sessionId: session.id,
       timestamp: new Date().toISOString(),
