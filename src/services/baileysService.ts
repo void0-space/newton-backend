@@ -1268,16 +1268,43 @@ export class BaileysManager {
 
   private async updateMessageStatus(sessionId: string, update: any) {
     try {
+      // Validate update structure
+      if (!update?.key?.id || !update?.update?.status) {
+        this.fastify.log.debug('Skipping invalid message update (missing key or status)');
+        return;
+      }
+
+      const status = update.update.status;
+      const messageId = update.key.id;
+
+      // Handle error statuses (negative numbers or > 3)
+      if (status < 0 || status > 3) {
+        this.fastify.log.warn(
+          `Received error ACK for message ${messageId}: status=${status}, error=${update.update.error || 'unknown'}`
+        );
+        // Still update to 'failed' status
+        await db
+          .update(message)
+          .set({
+            status: 'failed',
+            updatedAt: new Date(),
+          })
+          .where(eq(message.externalId, messageId));
+        return;
+      }
+
+      // Normal status update
       await db
         .update(message)
         .set({
-          status: this.mapBaileysStatus(update.update.status),
+          status: this.mapBaileysStatus(status),
           updatedAt: new Date(),
         })
-        .where(eq(message.externalId, update.key.id));
+        .where(eq(message.externalId, messageId));
     } catch (error) {
+      // Only log actual errors, not ACK errors
       this.fastify.log.error(
-        'Failed to update message status:: ' +
+        'Failed to update message status: ' +
           (error instanceof Error ? error.message : String(error))
       );
     }
