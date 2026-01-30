@@ -46,7 +46,7 @@ export async function sendMessage(request: FastifyRequest, reply: FastifyReply) 
     // Format phone number - add @s.whatsapp.net if not already present
     const to = rawPhoneNumber.includes('@') ? rawPhoneNumber : `${rawPhoneNumber}@s.whatsapp.net`;
 
-    request.log.info(`API: Sending message - To: ${to}, Type: ${type}`);
+    console.log(`API: Sending message - To: ${to}, Type: ${type}`);
 
     // Get API key data (set by API key middleware)
     const apiKey = request.headers['x-api-key'];
@@ -55,7 +55,7 @@ export async function sendMessage(request: FastifyRequest, reply: FastifyReply) 
         key: apiKey as string,
       },
     });
-    request.log.info(`API: Verified API key - ${JSON.stringify(verifiedKey.key?.metadata)}`);
+    console.log(`API: Verified API key - ${JSON.stringify(verifiedKey.key?.metadata)}`);
 
     if (!verifiedKey.valid) {
       return reply.status(401).send({
@@ -281,29 +281,35 @@ export async function sendMessage(request: FastifyRequest, reply: FastifyReply) 
       messageContent.quoted = { id: replyMessageId };
     }
 
-    request.log.info('API: Sending message with content:' + ' (details logged)');
+    console.log('API: Sending message with content:' + ' (details logged)');
 
     // Send message via Baileys with timeout protection
     let result;
     try {
-      // Add timeout to prevent infinite blocking (30 seconds max)
+      // Add timeout to prevent infinite blocking (60 seconds max - increased from 30s)
       const sendPromise = session.socket.sendMessage(to, messageContent);
       const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Message send timeout after 30s')), 30000)
+        setTimeout(
+          () =>
+            reject(
+              new Error(
+                'Message send timeout after 60s - recipient may be offline or network is slow'
+              )
+            ),
+          60000
+        )
       );
 
       result = await Promise.race([sendPromise, timeoutPromise]);
-      request.log.info('API: Message sent successfully');
+      console.log('API: Message sent successfully');
     } catch (sendError) {
-      request.log.error(
-        'API: Message send failed: ' +
-          (sendError instanceof Error ? sendError.message : String(sendError))
-      );
+      const errorMsg = sendError instanceof Error ? sendError.message : String(sendError);
+      request.log.error(`API: Message send failed: ${errorMsg}`);
 
       return reply.status(500).send({
         error: 'Failed to send message',
         code: 'SEND_FAILED',
-        details: sendError instanceof Error ? sendError.message : 'Unknown error',
+        details: errorMsg,
       });
     }
 
