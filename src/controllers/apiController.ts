@@ -283,24 +283,10 @@ export async function sendMessage(request: FastifyRequest, reply: FastifyReply) 
 
     console.log('API: Sending message with content:' + ' (details logged)');
 
-    // Send message via Baileys with timeout protection
+    // Send message via Baileys - no timeout, let WhatsApp handle delivery timing
     let result;
     try {
-      // Add timeout to prevent infinite blocking (60 seconds max - increased from 30s)
-      const sendPromise = session.socket.sendMessage(to, messageContent);
-      const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(
-          () =>
-            reject(
-              new Error(
-                'Message send timeout after 60s - recipient may be offline or network is slow'
-              )
-            ),
-          60000
-        )
-      );
-
-      result = await Promise.race([sendPromise, timeoutPromise]);
+      result = await session.socket.sendMessage(to, messageContent);
       console.log('API: Message sent successfully');
     } catch (sendError) {
       const errorMsg = sendError instanceof Error ? sendError.message : String(sendError);
