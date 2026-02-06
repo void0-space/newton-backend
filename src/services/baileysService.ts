@@ -12,6 +12,7 @@ import {
   isJidNewsletter,
   isJidStatusBroadcast,
   isJidMetaAI,
+  isJidGroup,
   isLidUser,
   jidNormalizedUser,
 } from '@whiskeysockets/baileys';
