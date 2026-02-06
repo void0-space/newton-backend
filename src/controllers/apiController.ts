@@ -287,7 +287,7 @@ export async function sendMessage(request: FastifyRequest, reply: FastifyReply) 
     let result;
     try {
       result = await session.socket.sendMessage(to, messageContent);
-      console.log('API: Message sent successfully');
+      console.log('API: Message sent successfully', messageContent);
     } catch (sendError) {
       const errorMsg = sendError instanceof Error ? sendError.message : String(sendError);
       request.log.error(`API: Message send failed: ${errorMsg}`);

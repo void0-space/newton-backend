@@ -125,13 +125,18 @@ export class BaileysManager {
           isJidBroadcast(jid) ||
           isJidNewsletter(jid) ||
           isJidStatusBroadcast(jid) ||
-          isJidMetaAI(jid),
+          isJidMetaAI(jid) ||
+          isJidGroup(jid),
 
         // EGRESS OPTIMIZATIONS: Reduce network traffic
         getMessage: async () => undefined, // Don't fetch old messages (reduces egress)
         shouldSyncHistoryMessage: () => false, // Don't sync message history
         syncFullHistory: false, // Don't download full chat history
         markOnlineOnConnect: false, // Don't send presence updates on connect
+
+        // PERFORMANCE OPTIMIZATION: Don't wait for delivery receipts
+        // This makes sendMessage return immediately instead of waiting 1-60 seconds
+        // fireAndForget: true,
 
         // Media download optimization
         options: {
