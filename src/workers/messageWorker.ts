@@ -10,14 +10,8 @@ export class MessageWorker {
   constructor(fastify: FastifyInstance) {
     this.fastify = fastify;
 
-    // Create BullMQ worker using Redis URL (for Railway) or individual params (for local)
-    const redisConnection = process.env.REDIS_URL
-      ? process.env.REDIS_URL
-      : {
-          host: process.env.REDIS_HOST || 'localhost',
-          port: parseInt(process.env.REDIS_PORT || '6379'),
-          password: process.env.REDIS_PASSWORD,
-        };
+    // Create BullMQ worker using Redis URL from Fastify config
+    const redisConnection = this.fastify.config.REDIS_URL;
 
     this.worker = new Worker<MessageJobData>(
       'whatsapp-messages',
