@@ -31,5 +31,5 @@ async function messageQueuePlugin(fastify: FastifyInstance) {
 
 export default fp(messageQueuePlugin, {
   name: 'message-queue',
-  dependencies: ['baileys', 'redis'],
+  dependencies: ['baileys-plugin', '@fastify/redis'],
 });
