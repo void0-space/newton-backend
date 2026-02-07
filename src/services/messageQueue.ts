@@ -18,13 +18,17 @@ export class MessageQueueService {
   constructor(fastify: FastifyInstance) {
     this.fastify = fastify;
 
-    // Create BullMQ queue using existing Redis connection
+    // Create BullMQ queue using Redis URL (for Railway) or individual params (for local)
+    const redisConnection = process.env.REDIS_URL
+      ? process.env.REDIS_URL
+      : {
+          host: process.env.REDIS_HOST || 'localhost',
+          port: parseInt(process.env.REDIS_PORT || '6379'),
+          password: process.env.REDIS_PASSWORD,
+        };
+
     this.queue = new Queue<MessageJobData>('whatsapp-messages', {
-      connection: {
-        host: process.env.REDIS_HOST || 'localhost',
-        port: parseInt(process.env.REDIS_PORT || '6379'),
-        password: process.env.REDIS_PASSWORD,
-      },
+      connection: redisConnection,
       defaultJobOptions: {
         attempts: 3, // Retry up to 3 times
         backoff: {
