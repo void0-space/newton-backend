@@ -1,5 +1,6 @@
 import { Queue } from 'bullmq';
 import { FastifyInstance } from 'fastify';
+import IORedis from 'ioredis';
 
 export interface MessageJobData {
   organizationId: string;
@@ -21,9 +22,9 @@ export class MessageQueueService {
     // Create BullMQ queue using Redis URL from Fastify config
     // This ensures we use the same connection string as the rest of the app
     const redisConnection = this.fastify.config.REDIS_URL;
-
+    const connection = new IORedis(redisConnection, { maxRetriesPerRequest: null });
     this.queue = new Queue<MessageJobData>('whatsapp-messages', {
-      connection: redisConnection,
+      connection,
       defaultJobOptions: {
         attempts: 3, // Retry up to 3 times
         backoff: {

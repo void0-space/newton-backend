@@ -98,6 +98,9 @@ importers:
       glob:
         specifier: ^11.0.3
         version: 11.1.0
+      ioredis:
+        specifier: ^5.9.2
+        version: 5.9.2
       link-preview-js:
         specifier: ^3.1.0
         version: 3.2.0
@@ -3797,10 +3800,6 @@ packages:
     resolution: {integrity: sha512-5Hh7Y1wQbvY5ooGgPbDaL5iYLAPzMTUrjMulskHLH6wnv/A+1q5rgEaiuqEjB+oxGXIVZs1FF+R/KPN3ZSQYYg==}
     engines: {node: '>=12'}
 
-  ioredis@5.9.1:
-    resolution: {integrity: sha512-BXNqFQ66oOsR82g9ajFFsR8ZKrjVvYCLyeML9IvSMAsP56XH2VXBdZjmI11p65nXXJxTEt1hie3J2QeFJVgrtQ==}
-    engines: {node: '>=12.22.0'}
-
   ioredis@5.9.2:
     resolution: {integrity: sha512-tAAg/72/VxOUW7RQSX1pIxJVucYKcjFjfvj60L57jrZpYCHC3XN0WCQ3sNYL4Gmvv+7GPvTAjc+KSdeNuE8oWQ==}
     engines: {node: '>=12.22.0'}
@@ -6000,7 +5999,7 @@ snapshots:
   '@fastify/redis@7.1.0':
     dependencies:
       fastify-plugin: 5.1.0
-      ioredis: 5.9.1
+      ioredis: 5.9.2
     transitivePeerDependencies:
       - supports-color
 
@@ -7605,7 +7604,7 @@ snapshots:
       lodash.throttle: 4.1.1
     optionalDependencies:
       '@redis/client': 1.6.1
-      ioredis: 5.9.1
+      ioredis: 5.9.2
     transitivePeerDependencies:
       - supports-color
 
@@ -8824,20 +8823,6 @@ snapshots:
       react-dom: 19.2.3(react@19.2.3)
 
   internmap@2.0.3: {}
-
-  ioredis@5.9.1:
-    dependencies:
-      '@ioredis/commands': 1.5.0
-      cluster-key-slot: 1.1.2
-      debug: 4.4.3
-      denque: 2.1.0
-      lodash.defaults: 4.2.0
-      lodash.isarguments: 3.1.0
-      redis-errors: 1.2.0
-      redis-parser: 3.0.0
-      standard-as-callback: 2.1.0
-    transitivePeerDependencies:
-      - supports-color
 
   ioredis@5.9.2:
     dependencies:

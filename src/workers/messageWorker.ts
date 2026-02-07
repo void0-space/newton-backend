@@ -2,6 +2,7 @@ import { Worker, Job } from 'bullmq';
 import { FastifyInstance } from 'fastify';
 import { MessageJobData } from '../services/messageQueue';
 import { createId } from '@paralleldrive/cuid2';
+import IORedis from 'ioredis';
 
 export class MessageWorker {
   private worker: Worker<MessageJobData>;
@@ -12,14 +13,14 @@ export class MessageWorker {
 
     // Create BullMQ worker using Redis URL from Fastify config
     const redisConnection = this.fastify.config.REDIS_URL;
-
+    const connection = new IORedis(redisConnection, { maxRetriesPerRequest: null });
     this.worker = new Worker<MessageJobData>(
       'whatsapp-messages',
       async (job: Job<MessageJobData>) => {
         return await this.processMessage(job);
       },
       {
-        connection: redisConnection,
+        connection,
         concurrency: 5, // Process up to 5 messages concurrently
       }
     );
