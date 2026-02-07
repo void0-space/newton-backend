@@ -206,7 +206,7 @@ export async function sendMessage(request: FastifyRequest, reply: FastifyReply) 
       }
     }
 
-    request.log.info('API: Session is connected, preparing to send message');
+    console.log('API: Queueing message for async processing');
 
     // Prepare message content based on type
     let messageContent: any = {};
@@ -281,44 +281,29 @@ export async function sendMessage(request: FastifyRequest, reply: FastifyReply) 
       messageContent.quoted = { id: replyMessageId };
     }
 
-    console.log('API: Sending message with content:' + ' (details logged)');
-
-    // Send message via Baileys - no timeout, let WhatsApp handle delivery timing
-    let result;
-    try {
-      result = await session.socket.sendMessage(to, messageContent);
-      console.log('API: Message sent successfully', messageContent);
-    } catch (sendError) {
-      const errorMsg = sendError instanceof Error ? sendError.message : String(sendError);
-      request.log.error(`API: Message send failed: ${errorMsg}`);
-
-      return reply.status(500).send({
-        error: 'Failed to send message',
-        code: 'SEND_FAILED',
-        details: errorMsg,
-      });
-    }
-
-    // Generate message ID for database
-    const messageId = createId();
-
-    // Save outgoing message to database
-    await request.server.baileys.saveOutgoingMessage(
+    // Queue the message for async processing
+    const jobId = await request.server.messageQueue.queueMessage({
       organizationId,
-      session.id,
-      messageId,
+      sessionId: session.id,
       to,
-      messageText || caption || 'media',
-      result
-    );
+      messageContent,
+      messageText,
+      caption,
+      type,
+    });
 
-    return reply.send({
+    console.log(`API: Message queued with job ID: ${jobId}`);
+
+    // Return 202 Accepted immediately
+    return reply.status(202).send({
       success: true,
-      messageId: result?.key?.id,
-      status: result?.status || 'sent',
+      jobId,
+      status: 'queued',
+      message: 'Message queued for delivery',
       to,
       sessionId: session.id,
       timestamp: new Date().toISOString(),
+      statusUrl: `/api/v1/whatsapp/messages/${jobId}/status`,
     });
   } catch (error) {
     request.log.error(

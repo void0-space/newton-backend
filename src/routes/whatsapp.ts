@@ -13,6 +13,7 @@ import {
 } from '../controllers/whatsappController';
 import { getMessagesByContact } from '../controllers/messageController';
 import { sendMessage } from '../controllers/apiController';
+import { getMessageJobStatus } from '../controllers/messageJobController';
 import { auth } from '../lib/auth';
 import { convertHeaders } from '../utils/header';
 // Removed complex paywall middleware - using client-side checks instead
@@ -335,7 +336,11 @@ const whatsappRoutes: FastifyPluginAsync = async fastify => {
   fastify.get('/messages', { preHandler: sessionAuthMiddleware }, getMessages);
 
   // Get messages by contact for chat page (session authenticated)
-  fastify.get('/messages/contact/:phone', { preHandler: sessionAuthMiddleware }, getMessagesByContact);
+  fastify.get(
+    '/messages/contact/:phone',
+    { preHandler: sessionAuthMiddleware },
+    getMessagesByContact
+  );
 
   // Message sending routes
   // Internal route for admin panel - require session auth
@@ -343,6 +348,9 @@ const whatsappRoutes: FastifyPluginAsync = async fastify => {
 
   // Public API route - require API key
   fastify.post('/send', { preHandler: apiKeyAuthMiddleware }, sendMessage);
+
+  // Job status endpoint - require API key
+  fastify.get('/messages/:jobId/status', { preHandler: apiKeyAuthMiddleware }, getMessageJobStatus);
 
   // GET endpoint for sending messages via URL parameters
   fastify.get('/send', async (request: FastifyRequest, reply) => {

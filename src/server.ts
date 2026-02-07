@@ -36,6 +36,9 @@ import { auth } from './lib/auth';
 // Import services
 import { schedulerService } from './services/schedulerService';
 
+// Import queue plugin
+import messageQueuePlugin from './plugins/messageQueue';
+
 dotenv.config();
 
 const logBufferSize = parseInt(process.env['LOG_BUFFER_SIZE'] || '256000', 10);
@@ -271,6 +274,7 @@ async function start() {
     // Register service plugins
     await fastify.register(storagePlugin);
     await fastify.register(baileysPlugin);
+    await fastify.register(messageQueuePlugin); // Register message queue after baileys
 
     // Initialize scheduler with baileys manager
     schedulerService.setBaileysManager(fastify.baileys);
