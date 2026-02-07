@@ -6,7 +6,7 @@ export const envSchema = {
     NODE_ENV: { type: 'string', default: 'development' },
     PORT: { type: 'number', default: 4001 },
     DATABASE_URL: { type: 'string' },
-    REDIS_URL: { type: 'string', default: 'redis://localhost:6379' },
+    REDIS_URL: { type: 'string' },
     BETTER_AUTH_SECRET: { type: 'string' },
     BETTER_AUTH_URL: { type: 'string', default: 'http://localhost:4001' },
     ENCRYPTION_KEY: { type: 'string' },
