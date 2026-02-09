@@ -62,7 +62,7 @@ export class WebhookService {
           sessionId,
         };
 
-        // Execute all webhooks in parallel (fire-and-forget)
+        // Queue all webhooks for async processing (fire-and-forget)
         // Don't await - let them run in background to avoid blocking message processing
         Promise.allSettled(
           webhooks.map(async webhookConfig => {
@@ -82,7 +82,8 @@ export class WebhookService {
               return;
             }
 
-            await this.deliverWebhook(webhookConfig, payload);
+            // Queue the webhook for delivery
+            await this.fastify.webhookQueue.queueWebhook(webhookConfig, payload);
           })
         ).catch(err => {
           // Log any unhandled errors from the background webhooks

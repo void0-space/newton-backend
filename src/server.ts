@@ -12,6 +12,8 @@ import dotenv from 'dotenv';
 import apikeyMiddleware from './plugins/apikeyMiddleware';
 import analyticsMiddleware from './plugins/analyticsMiddleware';
 import tusPlugin from './plugins/tus';
+import rateLimitMiddleware from './plugins/rateLimitMiddleware';
+import metricsMiddleware from './plugins/metricsMiddleware';
 
 // Import routes
 import authRoutes from './routes/auth';
@@ -36,8 +38,9 @@ import { auth } from './lib/auth';
 // Import services
 import { schedulerService } from './services/schedulerService';
 
-// Import queue plugin
+// Import queue plugins
 import messageQueuePlugin from './plugins/messageQueue';
+import webhookQueuePlugin from './plugins/webhookQueue';
 
 dotenv.config();
 
@@ -270,11 +273,14 @@ async function start() {
     // Register auth and middleware plugins
     // await fastify.register(betterAuthPlugin);
     await fastify.register(apikeyMiddleware);
+    await fastify.register(rateLimitMiddleware);
+    await fastify.register(metricsMiddleware);
 
     // Register service plugins
     await fastify.register(storagePlugin);
     await fastify.register(baileysPlugin);
     await fastify.register(messageQueuePlugin); // Register message queue after baileys
+    await fastify.register(webhookQueuePlugin); // Register webhook queue
 
     // Initialize scheduler with baileys manager
     schedulerService.setBaileysManager(fastify.baileys);

@@ -247,90 +247,6 @@ const whatsappRoutes: FastifyPluginAsync = async fastify => {
     }
   );
 
-  // Real-time status updates via Server-Sent Events
-  // fastify.get(
-  //   '/status-updates',
-  //   { preHandler: sessionAuthMiddleware },
-  //   async (request: any, reply) => {
-  //     reply.raw.writeHead(200, {
-  //       'Content-Type': 'text/event-stream',
-  //       'Cache-Control': 'no-cache',
-  //       Connection: 'keep-alive',
-  //       'Access-Control-Allow-Origin': process.env.APP_URL,
-  //       'Access-Control-Allow-Credentials': 'true',
-  //       'Access-Control-Allow-Headers': 'Cache-Control',
-  //     });
-
-  //     const organizationId = request.organization.id;
-  //     // const subscriber = fastify.redis.duplicate();
-
-  //     // // Subscribe to WhatsApp session events for this organization
-  //     // await subscriber.psubscribe('whatsapp:session:*');
-
-  //     // const heartbeat = setInterval(() => {
-  //     //   const heartbeatData = { type: 'heartbeat', timestamp: new Date().toISOString() };
-  //     //   fastify.log.info(heartbeatData, 'Sending SSE heartbeat:');
-  //     //   reply.raw.write(`data: ${JSON.stringify(heartbeatData)}\n\n`);
-  //     // }, 10000); // Reduced to 10 seconds for testing
-
-  //     // subscriber.on('pmessage', async (_pattern, channel, message) => {
-  //     //   try {
-  //     //     const eventData = JSON.parse(message);
-  //     //     const sessionId = channel.split(':')[2];
-
-  //     //     fastify.log.info(
-  //     //       {
-  //     //         event: eventData.event,
-  //     //         organizationId,
-  //     //         channel,
-  //     //         data: eventData.data,
-  //     //       },
-  //     //       `SSE received event for session ${sessionId}:`
-  //     //     );
-
-  //     //     // Check if session belongs to this organization with direct database query
-  //     //     const [session] = await db
-  //     //       .select()
-  //     //       .from(whatsappSession)
-  //     //       .where(
-  //     //         and(
-  //     //           eq(whatsappSession.id, sessionId),
-  //     //           eq(whatsappSession.organizationId, organizationId)
-  //     //         )
-  //     //       )
-  //     //       .limit(1);
-
-  //     //     if (session) {
-  //     //       const statusUpdate = {
-  //     //         type: 'status_update',
-  //     //         sessionId,
-  //     //         event: eventData.event,
-  //     //         data: eventData.data,
-  //     //         timestamp: eventData.timestamp,
-  //     //       };
-
-  //     //       fastify.log.info(statusUpdate, `Sending SSE event to frontend:`);
-  //     //       reply.raw.write(`data: ${JSON.stringify(statusUpdate)}\n\n`);
-  //     //     } else {
-  //     //       fastify.log.info(
-  //     //         `Session ${sessionId} does not belong to organization ${organizationId}, skipping event`
-  //     //       );
-  //     //     }
-  //     //   } catch (error) {
-  //     //     fastify.log.error(
-  //     //       'Error processing SSE event: ' +
-  //     //         (error instanceof Error ? error.message : String(error))
-  //     //     );
-  //     //   }
-  //     // });
-
-  //     request.raw.on('close', () => {
-  //       clearInterval(heartbeat);
-  //       subscriber.quit();
-  //     });
-  //   }
-  // );
-
   // Message routes
   // Get messages for admin panel
   fastify.get('/messages', { preHandler: sessionAuthMiddleware }, getMessages);
@@ -343,17 +259,17 @@ const whatsappRoutes: FastifyPluginAsync = async fastify => {
   );
 
   // Message sending routes
-  // Internal route for admin panel - require session auth
-  fastify.post('/internal/send', { preHandler: sessionAuthMiddleware }, internalSendMessage);
+  // Internal route for admin panel - require session auth and rate limit
+  fastify.post('/internal/send', { preHandler: [sessionAuthMiddleware, fastify.rateLimit] }, internalSendMessage);
 
-  // Public API route - require API key
-  fastify.post('/send', { preHandler: apiKeyAuthMiddleware }, sendMessage);
+  // Public API route - require API key and rate limit
+  fastify.post('/send', { preHandler: [apiKeyAuthMiddleware, fastify.rateLimit] }, sendMessage);
 
   // Job status endpoint - require API key
   fastify.get('/messages/:jobId/status', { preHandler: apiKeyAuthMiddleware }, getMessageJobStatus);
 
-  // GET endpoint for sending messages via URL parameters
-  fastify.get('/send', async (request: FastifyRequest, reply) => {
+  // GET endpoint for sending messages via URL parameters - add rate limit
+  fastify.get('/send', { preHandler: fastify.rateLimit }, async (request: FastifyRequest, reply) => {
     try {
       // Get API key from either URL parameter or header
       const queryParams = request.query as any;

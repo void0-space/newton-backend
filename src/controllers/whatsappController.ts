@@ -411,40 +411,29 @@ export async function sendMessageInternal(request: FastifyRequest, reply: Fastif
       messageContent.quoted = { id: replyMessageId };
     }
 
-    // Format the phone number as WhatsApp JID
-    const formattedTo = to.includes('@') ? to : `${to}@s.whatsapp.net`;
-
-    request.log.info('Sending message with content:' + ' (details logged)');
-
-    // Send message via Baileys
-    const result = await session.socket.sendMessage(formattedTo, messageContent);
-
-    request.log.info('Message sent successfully:' + ' (details logged)');
-
-    // Save message to database
-    const messageId = createId();
-    const contentForDb = messageText || caption || `${type} message`;
-    await request.server.baileys.saveOutgoingMessage(
+    // Queue the message for async processing
+    const jobId = await request.server.messageQueue.queueMessage({
       organizationId,
-      session.id,
-      messageId,
+      sessionId: session.id,
       to,
-      contentForDb,
-      result
-    );
+      messageContent,
+      messageText,
+      caption,
+      type,
+    });
 
-    return reply.send({
+    request.log.info(`Message queued with job ID: ${jobId}`);
+
+    // Return 202 Accepted immediately
+    return reply.status(202).send({
       success: true,
-      data: {
-        messageId: result?.key?.id || messageId,
-        status: 'sent',
-        timestamp: new Date().toISOString(),
-        to,
-        content: contentForDb,
-        type,
-        mediaUrl: mediaUrl || undefined,
-        caption: caption || undefined,
-      },
+      jobId,
+      status: 'queued',
+      message: 'Message queued for delivery',
+      to,
+      sessionId: session.id,
+      timestamp: new Date().toISOString(),
+      statusUrl: `/api/v1/whatsapp/messages/${jobId}/status`,
     });
   } catch (error) {
     request.log.error(
