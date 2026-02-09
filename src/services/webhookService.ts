@@ -64,11 +64,14 @@ export class WebhookService {
 
         // Queue all webhooks for async processing (fire-and-forget)
         // Don't await - let them run in background to avoid blocking message processing
-        Promise.allSettled(
-          webhooks.map(async webhookConfig => {
+        for (const webhookConfig of webhooks) {
+          try {
             // Check if this webhook is configured for this event
             if (webhookConfig.events && !webhookConfig.events.includes(event)) {
-              return;
+              this.fastify.log.debug(
+                `Webhook ${webhookConfig.id} not configured for event ${event}`
+              );
+              continue;
             }
 
             // SAFEGUARD: Circuit breaker - check if webhook is temporarily disabled
@@ -79,16 +82,22 @@ export class WebhookService {
               this.fastify.log.warn(
                 `Webhook ${webhookConfig.id} is circuit-broken, skipping delivery`
               );
-              return;
+              continue;
             }
 
             // Queue the webhook for delivery
-            await this.fastify.webhookQueue.queueWebhook(webhookConfig, payload);
-          })
-        ).catch(err => {
-          // Log any unhandled errors from the background webhooks
-          this.fastify.log.error('Unhandled error in webhook delivery:', err);
-        });
+           console.log(
+              `Queuing webhook ${webhookConfig.id} for event ${event} to ${webhookConfig.url}`
+            );
+            const jobId = await this.fastify.webhookQueue.queueWebhook(webhookConfig, payload);
+           console.log(`Webhook queued successfully with jobId: ${jobId}`);
+          } catch (error) {
+            this.fastify.log.error(
+              `Error queuing webhook ${webhookConfig.id} for event ${event}:`,
+              error
+            );
+          }
+        }
 
         // Set deduplication key (expires after DEDUP_WINDOW_SECONDS)
         await this.fastify.redis.setex(dedupKey, this.DEDUP_WINDOW_SECONDS, '1');
