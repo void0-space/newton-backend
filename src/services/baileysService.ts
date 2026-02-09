@@ -1786,12 +1786,20 @@ export class BaileysManager {
         updatedAt: new Date(),
       });
 
-      // Publish message event - DISABLED: Not critical, already saved to DB
-      // await this.publishEvent(sessionId, 'message.sent', {
-      //   messageId,
-      //   to,
-      //   content: { text: content },
-      // });
+      // Send webhook notification for outgoing message
+      // OPTIMIZATION: Don't await webhook delivery to prevent blocking message processing
+      this.webhookService.sendWebhook(
+        organizationId,
+        'message.sent',
+        {
+          messageId,
+          sessionId,
+          to,
+          content: { text: content },
+          timestamp: new Date().toISOString(),
+        },
+        sessionId
+      );
     } catch (error) {
       this.fastify.log.error(
         'Failed to save outgoing message:: ' +
