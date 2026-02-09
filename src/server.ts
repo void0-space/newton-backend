@@ -343,8 +343,13 @@ async function start() {
     // TODO: Add test endpoint after fixing middleware decorators
 
     // Health and status endpoints
-    fastify.get('/health', async () => {
-      return { status: 'ok', timestamp: new Date().toISOString() };
+    fastify.get('/health', async (request, reply) => {
+      const metricsData = fastify.metrics.getMetrics();
+      return reply.send({
+        status: 'ok',
+        timestamp: new Date().toISOString(),
+        metrics: metricsData,
+      });
     });
 
     fastify.get('/api/v1/status', async () => {

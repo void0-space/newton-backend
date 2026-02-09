@@ -78,15 +78,7 @@ const metricsMiddleware: FastifyPluginCallback = (fastify, options, done) => {
     });
   });
 
-  // Health endpoint with metrics
-  fastify.get('/health', async (request, reply) => {
-    const metricsData = fastify.metrics.getMetrics();
-    return reply.send({
-      status: 'ok',
-      timestamp: new Date().toISOString(),
-      metrics: metricsData,
-    });
-  });
+
 
   // Cleanup on server close
   fastify.addHook('onClose', async () => {
