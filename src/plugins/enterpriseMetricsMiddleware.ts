@@ -116,11 +116,17 @@ const enterpriseMetricsMiddleware: FastifyPluginCallback = (fastify, options, do
       const webhookQueue = fastify.webhookQueue.getQueue();
       const webhookQueueMetrics = await webhookQueue.getJobCounts('completed', 'failed', 'waiting', 'active', 'delayed');
       
+      // Get DLQ metrics
+      const messageDLQMetrics = await fastify.messageQueue.getDLQMetrics();
+      const webhookDLQMetrics = await fastify.webhookQueue.getDLQMetrics();
+      
       return reply.send({
         success: true,
         data: {
           messageQueue: messageQueueMetrics,
           webhookQueue: webhookQueueMetrics,
+          messageDLQ: messageDLQMetrics,
+          webhookDLQ: webhookDLQMetrics,
         },
       });
     } catch (error) {

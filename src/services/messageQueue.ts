@@ -35,11 +35,33 @@ export class MessageQueueService {
           age: 3600, // Keep completed jobs for 1 hour
           count: 10000, // Keep last 10,000 completed jobs
         },
-        removeOnFail: {
-          age: 604800, // Keep failed jobs for 7 days
-        },
+        removeOnFail: false, // Keep failed jobs permanently for DLQ processing
         timeout: 30000, // 30 second timeout per job
       },
+    });
+
+    // Create Dead-Letter Queue (DLQ) for failed jobs
+    this.dlq = new Queue<MessageJobData & { error: string; stack: string; failedAt: Date }>(
+      'whatsapp-messages-dlq',
+      {
+        connection,
+        defaultJobOptions: {
+          attempts: 1,
+          removeOnComplete: false,
+          removeOnFail: false,
+        },
+      }
+    );
+
+    // Setup failed job listener to move to DLQ
+    this.queue.on('failed', async (job, error) => {
+      console.log(`Job ${job.id} failed, moving to DLQ:`, error.message);
+      await this.dlq.add('failed-message', {
+        ...job.data,
+        error: error.message,
+        stack: error.stack || '',
+        failedAt: new Date(),
+      });
     });
 
     this.fastify.log.info('Message queue service initialized');
@@ -84,6 +106,19 @@ export class MessageQueueService {
       finishedOn: job.finishedOn,
       data: job.data,
     };
+  }
+
+  /**
+   * Get DLQ (Dead-Letter Queue) metrics
+   */
+  async getDLQMetrics() {
+    try {
+      const dlqMetrics = await this.dlq.getJobCounts('completed', 'failed', 'waiting', 'active', 'delayed');
+      return dlqMetrics;
+    } catch (error) {
+      this.fastify.log.error('Error getting DLQ metrics:', error);
+      return null;
+    }
   }
 
   /**

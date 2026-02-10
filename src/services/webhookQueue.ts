@@ -29,11 +29,33 @@ export class WebhookQueueService {
           age: 3600, // Keep completed jobs for 1 hour (reduce storage)
           count: 10000, // Keep last 10,000 completed jobs
         },
-        removeOnFail: {
-          age: 604800, // Keep failed jobs for 7 days
-        },
+        removeOnFail: false, // Keep failed jobs permanently for DLQ processing
         timeout: 30000, // 30 second timeout per job
       },
+    });
+
+    // Create Dead-Letter Queue (DLQ) for failed webhooks
+    this.dlq = new Queue<WebhookJobData & { error: string; stack: string; failedAt: Date }>(
+      'webhooks-dlq',
+      {
+        connection,
+        defaultJobOptions: {
+          attempts: 1,
+          removeOnComplete: false,
+          removeOnFail: false,
+        },
+      }
+    );
+
+    // Setup failed job listener to move to DLQ
+    this.queue.on('failed', async (job, error) => {
+      console.log(`Webhook job ${job.id} failed, moving to DLQ:`, error.message);
+      await this.dlq.add('failed-webhook', {
+        ...job.data,
+        error: error.message,
+        stack: error.stack || '',
+        failedAt: new Date(),
+      });
     });
 
     this.fastify.log.info('Webhook queue service initialized');
@@ -80,6 +102,19 @@ export class WebhookQueueService {
       finishedOn: job.finishedOn,
       data: job.data,
     };
+  }
+
+  /**
+   * Get DLQ (Dead-Letter Queue) metrics
+   */
+  async getDLQMetrics() {
+    try {
+      const dlqMetrics = await this.dlq.getJobCounts('completed', 'failed', 'waiting', 'active', 'delayed');
+      return dlqMetrics;
+    } catch (error) {
+      this.fastify.log.error('Error getting DLQ metrics:', error);
+      return null;
+    }
   }
 
   /**
