@@ -1,16 +1,23 @@
 import { FastifyPluginCallback } from 'fastify';
 import fp from 'fastify-plugin';
 
+interface TokenBucket {
+  tokens: number;
+  lastRefill: number;
+}
+
 const rateLimitMiddleware: FastifyPluginCallback = (fastify, options, done) => {
-  // Rate limiting configuration
+  // Rate limiting configuration with burst support
   const RATE_LIMIT = {
     windowMs: 60 * 1000, // 1 minute window
-    max: 100, // 100 requests per minute per IP
+    max: 100, // 100 requests per minute
+    burst: 50, // Allow 50 extra requests in a burst
+    tokensPerSecond: 100 / 60, // ~1.666 tokens per second
     message: 'Too many requests from this IP, please try again later.',
   };
 
-  // In-memory store for rate limiting (for simplicity)
-  const rateLimitStore = new Map<string, { count: number; resetTime: number }>();
+  // Token bucket store per IP
+  const tokenBuckets = new Map<string, TokenBucket>();
 
   fastify.decorate('rateLimit', async (request: any, reply: any) => {
     const ip = request.ip || request.socket?.remoteAddress;
@@ -20,30 +27,38 @@ const rateLimitMiddleware: FastifyPluginCallback = (fastify, options, done) => {
 
     const now = Date.now();
     const key = `rate-limit:${ip}`;
-    const entry = rateLimitStore.get(key);
-
-    // Check if rate limit window has expired
-    if (entry && now > entry.resetTime) {
-      rateLimitStore.delete(key);
+    
+    // Get or create token bucket for IP
+    let bucket = tokenBuckets.get(key);
+    if (!bucket) {
+      bucket = {
+        tokens: RATE_LIMIT.max + RATE_LIMIT.burst, // Full bucket on first request
+        lastRefill: now,
+      };
+      tokenBuckets.set(key, bucket);
     }
 
-    // Get or create entry
-    const currentEntry = rateLimitStore.get(key) || {
-      count: 0,
-      resetTime: now + RATE_LIMIT.windowMs,
-    };
+    // Refill tokens based on time elapsed
+    const timeElapsed = now - bucket.lastRefill;
+    const tokensToAdd = (timeElapsed / 1000) * RATE_LIMIT.tokensPerSecond;
+    
+    if (tokensToAdd > 0) {
+      bucket.tokens = Math.min(
+        bucket.tokens + tokensToAdd, 
+        RATE_LIMIT.max + RATE_LIMIT.burst
+      );
+      bucket.lastRefill = now;
+    }
 
-    // Increment request count
-    currentEntry.count++;
-    rateLimitStore.set(key, currentEntry);
-
-    // Check rate limit
-    if (currentEntry.count > RATE_LIMIT.max) {
-      const retryAfter = Math.ceil((currentEntry.resetTime - now) / 1000);
+    // Check if we have available tokens
+    if (bucket.tokens < 1) {
+      const refillTime = Math.ceil((1 - bucket.tokens) / RATE_LIMIT.tokensPerSecond);
+      const retryAfter = Math.ceil(refillTime);
+      
       reply.header('Retry-After', retryAfter.toString());
       reply.header('X-RateLimit-Limit', RATE_LIMIT.max.toString());
       reply.header('X-RateLimit-Remaining', '0');
-      reply.header('X-RateLimit-Reset', Math.ceil(currentEntry.resetTime / 1000).toString());
+      reply.header('X-RateLimit-Reset', Math.ceil((now + refillTime * 1000) / 1000).toString());
 
       return reply.status(429).send({
         error: RATE_LIMIT.message,
@@ -52,10 +67,16 @@ const rateLimitMiddleware: FastifyPluginCallback = (fastify, options, done) => {
       });
     }
 
+    // Consume one token
+    bucket.tokens -= 1;
+
     // Set rate limit headers
+    const remaining = Math.floor(bucket.tokens);
+    const resetIn = Math.ceil((RATE_LIMIT.max - remaining) / RATE_LIMIT.tokensPerSecond);
+    
     reply.header('X-RateLimit-Limit', RATE_LIMIT.max.toString());
-    reply.header('X-RateLimit-Remaining', (RATE_LIMIT.max - currentEntry.count).toString());
-    reply.header('X-RateLimit-Reset', Math.ceil(currentEntry.resetTime / 1000).toString());
+    reply.header('X-RateLimit-Remaining', remaining.toString());
+    reply.header('X-RateLimit-Reset', Math.ceil((now + resetIn * 1000) / 1000).toString());
   });
 
   done();
