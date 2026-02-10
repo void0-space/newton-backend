@@ -13,7 +13,7 @@ import apikeyMiddleware from './plugins/apikeyMiddleware';
 import analyticsMiddleware from './plugins/analyticsMiddleware';
 import tusPlugin from './plugins/tus';
 import rateLimitMiddleware from './plugins/rateLimitMiddleware';
-import metricsMiddleware from './plugins/metricsMiddleware';
+import enterpriseMetricsMiddleware from './plugins/enterpriseMetricsMiddleware';
 
 // Import routes
 import authRoutes from './routes/auth';
@@ -274,7 +274,7 @@ async function start() {
     // await fastify.register(betterAuthPlugin);
     await fastify.register(apikeyMiddleware);
     await fastify.register(rateLimitMiddleware);
-    await fastify.register(metricsMiddleware);
+    await fastify.register(enterpriseMetricsMiddleware);
 
     // Register service plugins
     await fastify.register(storagePlugin);

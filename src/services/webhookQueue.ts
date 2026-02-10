@@ -20,18 +20,19 @@ export class WebhookQueueService {
     this.queue = new Queue<WebhookJobData>('webhooks', {
       connection,
       defaultJobOptions: {
-        attempts: 3, // Retry up to 3 times
+        attempts: 5, // Retry up to 5 times for enterprise reliability
         backoff: {
           type: 'exponential',
-          delay: 2000, // Start with 2 second delay, doubles each retry
+          delay: 3000, // Start with 3 second delay, doubles each retry (slower for enterprise)
         },
         removeOnComplete: {
-          age: 86400, // Keep completed jobs for 24 hours
-          count: 1000, // Keep last 1000 completed jobs
+          age: 3600, // Keep completed jobs for 1 hour (reduce storage)
+          count: 10000, // Keep last 10,000 completed jobs
         },
         removeOnFail: {
           age: 604800, // Keep failed jobs for 7 days
         },
+        timeout: 30000, // 30 second timeout per job
       },
     });
 
