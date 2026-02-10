@@ -22,6 +22,11 @@ export class MessageWorker {
       {
         connection,
         concurrency: 100, // Process up to 100 messages concurrently (significantly increased for high load)
+        settings: {
+          // Process jobs in priority order (higher priority first)
+          lockDuration: 30000, // 30 second lock duration
+          maxStalledCount: 1, // Retry stalled jobs immediately
+        },
       }
     );
 

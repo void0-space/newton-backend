@@ -31,18 +31,18 @@ export class WebhookWorker {
 
     // Event handlers
     this.worker.on('completed', job => {
-      this.fastify.log.info(`Webhook job ${job.id} completed successfully`);
+      console.log(`Webhook job ${job.id} completed successfully`);
     });
 
     this.worker.on('failed', (job, err) => {
-      this.fastify.log.error(`Webhook job ${job?.id} failed:`, err);
+      console.error(`Webhook job ${job?.id} failed:`, err);
     });
 
     this.worker.on('error', err => {
-      this.fastify.log.error('Webhook worker error:', err);
+      console.error('Webhook worker error:', err);
     });
 
-    this.fastify.log.info('Webhook worker started');
+    console.log('Webhook worker started');
   }
 
   /**
