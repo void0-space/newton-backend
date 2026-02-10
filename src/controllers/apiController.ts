@@ -282,6 +282,8 @@ export async function sendMessage(request: FastifyRequest, reply: FastifyReply) 
     }
 
     // Queue the message for async processing
+    // Give higher priority to messages that are responses to incoming messages
+    const priority = replyMessageId ? 10 : 0; // 10 = highest priority
     const jobId = await request.server.messageQueue.queueMessage({
       organizationId,
       sessionId: session.id,
@@ -290,7 +292,7 @@ export async function sendMessage(request: FastifyRequest, reply: FastifyReply) 
       messageText,
       caption,
       type,
-    });
+    }, priority);
 
     console.log(`API: Message queued with job ID: ${jobId}`);
 

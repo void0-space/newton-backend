@@ -44,15 +44,16 @@ export class MessageQueueService {
     this.fastify.log.info('Message queue service initialized');
   }
 
-  /**
+   /**
    * Add a message to the queue for async processing
    */
-  async queueMessage(data: MessageJobData): Promise<string> {
+  async queueMessage(data: MessageJobData, priority: number = 0): Promise<string> {
     const job = await this.queue.add('send-message', data, {
       jobId: `msg-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      priority: priority, // Higher priority = processed first (0 = default, 10 = highest)
     });
 
-    this.fastify.log.info(`Message queued with job ID: ${job.id}`);
+    this.fastify.log.info(`Message queued with job ID: ${job.id}, priority: ${priority}`);
     return job.id!;
   }
 

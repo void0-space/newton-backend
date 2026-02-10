@@ -25,7 +25,7 @@ export class WebhookWorker {
       },
       {
         connection,
-        concurrency: 10, // Process up to 10 webhooks concurrently
+        concurrency: 50, // Process up to 50 webhooks concurrently (increased for high load)
       }
     );
 
@@ -175,7 +175,7 @@ export class WebhookWorker {
 
       // Use AbortController for better compatibility and control
       controller = new AbortController();
-      timeoutId = setTimeout(() => controller?.abort(), 30000); // 30 second timeout
+      timeoutId = setTimeout(() => controller?.abort(), 8000); // 8 second timeout (reduced for faster failure)
 
       const response = await fetch(url, {
         method: 'POST',

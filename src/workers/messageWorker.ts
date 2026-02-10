@@ -21,7 +21,7 @@ export class MessageWorker {
       },
       {
         connection,
-        concurrency: 20, // Process up to 20 messages concurrently (increased for high load)
+        concurrency: 100, // Process up to 100 messages concurrently (significantly increased for high load)
       }
     );
 
