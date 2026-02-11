@@ -21,6 +21,9 @@ const webhookQueuePlugin = fp(async (fastify: FastifyInstance) => {
   });
 
   fastify.log.info('Webhook queue plugin registered');
+}, {
+  name: 'webhook-queue',
+  dependencies: ['@fastify/redis']
 });
 
 export default webhookQueuePlugin;
