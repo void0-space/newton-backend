@@ -5,7 +5,7 @@ import { createId } from '@paralleldrive/cuid2';
 import IORedis from 'ioredis';
 import { db } from '../db/drizzle';
 import { webhook, webhookDelivery } from '../db/schema';
-import { eq } from 'drizzle-orm';
+import { eq, and } from 'drizzle-orm';
 import crypto from 'crypto';
 
 export class WebhookWorker {
