@@ -47,5 +47,10 @@ declare module 'fastify' {
       GITHUB_CLIENT_ID?: string;
       GITHUB_CLIENT_SECRET?: string;
     };
+    
+    webhookQueue: {
+      queueWebhook: (webhookConfig: any, payload: any) => Promise<string>;
+      getJobStatus: (jobId: string) => Promise<any>;
+    };
   }
 }

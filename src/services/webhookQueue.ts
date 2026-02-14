@@ -65,6 +65,7 @@ export class WebhookQueueService {
    * Add a webhook to the queue for async processing
    */
   async queueWebhook(webhookConfig: any, payload: any): Promise<string> {
+    console.log('Queueing webhook:', webhookConfig, JSON.stringify(payload));
     const job = await this.queue.add('deliver-webhook', {
       webhookConfig,
       payload,
