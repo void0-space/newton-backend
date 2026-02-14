@@ -83,10 +83,10 @@ export class BaileysManager {
     const queueKey = `${sessionId}:${normalizedJid}`;
 
     if (!this.perJidQueue.has(queueKey)) {
-      // Increased concurrency for better performance while maintaining Signal protocol safety
-      // For high-volume scenarios, concurrency 3-5 works well for most JIDs
+      // Concurrency 1 ensures Signal protocol safety
+      // WhatsApp conversations are inherently sequential
       this.perJidQueue.set(queueKey, new PQueue({ 
-        concurrency: 3,
+        concurrency: 1,
         timeout: 30000 // 30 second timeout for queue operations
       }));
     }

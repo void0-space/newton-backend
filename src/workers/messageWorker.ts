@@ -28,7 +28,7 @@ export class MessageWorker {
       },
       {
         connection,
-        concurrency: 200, // Significantly increased concurrency for high morning load
+        concurrency: 25, // Optimized concurrency to prevent resource saturation
         settings: {
           // Process jobs in priority order (higher priority first)
           lockDuration: 60000, // 60 second lock duration for long-running jobs

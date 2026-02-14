@@ -32,7 +32,7 @@ export class WebhookWorker {
       },
       {
         connection,
-        concurrency: 150, // Significantly increased concurrency for high morning load
+        concurrency: 25, // Optimized concurrency to prevent resource saturation
         settings: {
           lockDuration: 30000, // 30 second lock duration for webhook deliveries
           maxStalledCount: 2, // Retry stalled jobs after 2 attempts
