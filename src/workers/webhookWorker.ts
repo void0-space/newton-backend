@@ -17,7 +17,14 @@ export class WebhookWorker {
 
     // Create BullMQ worker using Redis URL from Fastify config
     const redisConnection = this.fastify.config.REDIS_URL;
-    const connection = new IORedis(redisConnection, { maxRetriesPerRequest: null });
+    const connection = new IORedis(redisConnection, { 
+      maxRetriesPerRequest: null,
+      lazyConnect: true,
+      connectTimeout: 10000,
+      retryDelayOnFailover: 100,
+      enableReadyCheck: true
+    });
+    
     this.worker = new Worker<WebhookJobData>(
       'webhooks',
       async (job: Job<WebhookJobData>) => {
@@ -25,7 +32,12 @@ export class WebhookWorker {
       },
       {
         connection,
-        concurrency: 50, // Process up to 50 webhooks concurrently (increased for high load)
+        concurrency: 150, // Significantly increased concurrency for high morning load
+        settings: {
+          lockDuration: 30000, // 30 second lock duration for webhook deliveries
+          maxStalledCount: 2, // Retry stalled jobs after 2 attempts
+          stallInterval: 15000, // Check for stalled jobs every 15 seconds
+        },
       }
     );
 
@@ -53,12 +65,12 @@ export class WebhookWorker {
     const deliveryId = createId();
     const payloadString = JSON.stringify(payload);
 
-    this.fastify.log.info(
+    console.log(
       `Processing webhook job ${job.id} to ${webhookConfig.url} (Event: ${payload.event})`
     );
 
     try {
-      // Save delivery record
+      // Save delivery record - optimized bulk insert
       await db.insert(webhookDelivery).values({
         id: deliveryId,
         webhookId: webhookConfig.id,

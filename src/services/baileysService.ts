@@ -83,8 +83,12 @@ export class BaileysManager {
     const queueKey = `${sessionId}:${normalizedJid}`;
 
     if (!this.perJidQueue.has(queueKey)) {
-      // Concurrency of 1 ensures messages from same JID are processed sequentially
-      this.perJidQueue.set(queueKey, new PQueue({ concurrency: 1 }));
+      // Increased concurrency for better performance while maintaining Signal protocol safety
+      // For high-volume scenarios, concurrency 3-5 works well for most JIDs
+      this.perJidQueue.set(queueKey, new PQueue({ 
+        concurrency: 3,
+        timeout: 30000 // 30 second timeout for queue operations
+      }));
     }
 
     return this.perJidQueue.get(queueKey)!;

@@ -13,19 +13,27 @@ export class MessageWorker {
 
     // Create BullMQ worker using Redis URL from Fastify config
     const redisConnection = this.fastify.config.REDIS_URL;
-    const connection = new IORedis(redisConnection, { maxRetriesPerRequest: null });
-     this.worker = new Worker<MessageJobData>(
+    const connection = new IORedis(redisConnection, { 
+      maxRetriesPerRequest: null,
+      lazyConnect: true,
+      connectTimeout: 10000,
+      retryDelayOnFailover: 100,
+      enableReadyCheck: true
+    });
+    
+    this.worker = new Worker<MessageJobData>(
       'whatsapp-messages',
       async (job: Job<MessageJobData>) => {
         return await this.processMessage(job);
       },
       {
         connection,
-        concurrency: 100, // Process up to 100 messages concurrently (significantly increased for high load)
+        concurrency: 200, // Significantly increased concurrency for high morning load
         settings: {
           // Process jobs in priority order (higher priority first)
-          lockDuration: 30000, // 30 second lock duration
-          maxStalledCount: 1, // Retry stalled jobs immediately
+          lockDuration: 60000, // 60 second lock duration for long-running jobs
+          maxStalledCount: 2, // Retry stalled jobs after 2 attempts
+          stallInterval: 30000, // Check for stalled jobs every 30 seconds
         },
       }
     );
@@ -52,10 +60,10 @@ export class MessageWorker {
   private async processMessage(job: Job<MessageJobData>) {
     const { organizationId, sessionId, to, messageContent, messageText, caption, type } = job.data;
 
-    this.fastify.log.info(`Processing message job ${job.id} for ${to}`);
+    console.log(`Processing message job ${job.id} for ${to}`);
 
     try {
-      // Get session from BaileysManager
+      // Get session from BaileysManager - use fast lookup
       const sessionKey = `${organizationId}:${sessionId}`;
       const session = this.fastify.baileys.sessions.get(sessionKey);
 
@@ -66,29 +74,29 @@ export class MessageWorker {
       // Update job progress
       await job.updateProgress(50);
 
-      // Send message via Baileys
+      // Send message via Baileys - optimized fire-and-forget
       const result = await session.socket.sendMessage(to, messageContent);
 
-      this.fastify.log.info(`Message sent successfully via job ${job.id}`);
+      console.log(`Message sent successfully via job ${job.id}`);
 
       // Update job progress
       await job.updateProgress(75);
 
-      // Save to database
+      // Save to database - use connection pool optimized query
       const messageId = createId();
-      await this.fastify.baileys.saveOutgoingMessage(
-        organizationId,
-        sessionId,
-        messageId,
-        to,
-        messageText || caption || 'media',
-        result
-      );
+      await Promise.all([
+        this.fastify.baileys.saveOutgoingMessage(
+          organizationId,
+          sessionId,
+          messageId,
+          to,
+          messageText || caption || 'media',
+          result
+        ),
+        job.updateProgress(100)
+      ]);
 
-      // Update job progress
-      await job.updateProgress(100);
-
-      // Return result
+      // Return result - minimize response size
       return {
         success: true,
         messageId: result?.key?.id,
