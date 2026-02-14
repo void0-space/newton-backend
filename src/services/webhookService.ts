@@ -37,23 +37,6 @@ export class WebhookService {
     // All logic runs in background via setImmediate
     setImmediate(async () => {
       try {
-        // SAFEGUARD: Deduplication - check if we recently sent this exact webhook
-        const dedupKey = `webhook:dedup:${organizationId}:${event}:${data.messageId || 'unknown'}`;
-        const isDuplicate = await this.fastify.redis.get(dedupKey);
-
-        if (isDuplicate) {
-          this.fastify.log.info(
-            `Skipping duplicate webhook for ${event} (messageId: ${data.messageId})`
-          );
-          return; // Skip duplicate
-        }
-
-        // Get all active webhooks for the organization that listen to this event
-        const webhooks = await db
-          .select()
-          .from(webhook)
-          .where(and(eq(webhook.organizationId, organizationId), eq(webhook.active, true)));
-
         const payload: WebhookPayload = {
           event,
           data,
@@ -62,48 +45,15 @@ export class WebhookService {
           sessionId,
         };
 
-        // Queue all webhooks for async processing (fire-and-forget)
-        // Don't await - let them run in background to avoid blocking message processing
-        for (const webhookConfig of webhooks) {
-          try {
-            // Check if this webhook is configured for this event
-            if (webhookConfig.events && !webhookConfig.events.includes(event)) {
-              this.fastify.log.debug(
-                `Webhook ${webhookConfig.id} not configured for event ${event}`
-              );
-              continue;
-            }
-
-            // SAFEGUARD: Circuit breaker - check if webhook is temporarily disabled
-            const circuitKey = `webhook:circuit:${webhookConfig.id}`;
-            const isCircuitOpen = await this.fastify.redis.get(circuitKey);
-
-            if (isCircuitOpen) {
-              this.fastify.log.warn(
-                `Webhook ${webhookConfig.id} is circuit-broken, skipping delivery`
-              );
-              continue;
-            }
-
-            // Queue the webhook for delivery
-           console.log(
-              `Queuing webhook ${webhookConfig.id} for event ${event} to ${webhookConfig.url}`
-            );
-            const jobId = await this.fastify.webhookQueue.queueWebhook(webhookConfig, payload);
-           console.log(`Webhook queued successfully with jobId: ${jobId}`);
-          } catch (error) {
-            this.fastify.log.error(
-              `Error queuing webhook ${webhookConfig.id} for event ${event}:`,
-              error
-            );
-          }
-        }
-
-        // Set deduplication key (expires after DEDUP_WINDOW_SECONDS)
-        await this.fastify.redis.setex(dedupKey, this.DEDUP_WINDOW_SECONDS, '1');
+        // Ultra-lightweight: Just queue the raw data for processing
+        // All business logic (deduplication, webhook lookup, circuit breaker) happens in worker
+        await this.fastify.webhookQueue.queueWebhook(
+          { organizationId, event }, // Minimal config
+          payload
+        );
       } catch (error) {
         this.fastify.log.error(
-          'Error sending webhook: ' + (error instanceof Error ? error.message : String(error))
+          'Error queuing webhook: ' + (error instanceof Error ? error.message : String(error))
         );
       }
     });

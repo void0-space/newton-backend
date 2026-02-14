@@ -62,14 +62,22 @@ export class WebhookWorker {
    */
   private async processWebhook(job: Job<WebhookJobData>) {
     const { webhookConfig, payload } = job.data;
-    const deliveryId = createId();
-    const payloadString = JSON.stringify(payload);
+    const { organizationId, event } = payload;
 
     console.log(
-      `Processing webhook job ${job.id} to ${webhookConfig.url} (Event: ${payload.event})`
+      `Processing webhook job ${job.id} for organization ${organizationId} (Event: ${event})`
     );
 
     try {
+      // Handle case where we need to lookup webhooks (new ultra-lightweight format)
+      if (!webhookConfig.id && webhookConfig.organizationId && webhookConfig.event) {
+        return await this.processWebhookLookup(job);
+      }
+
+      // Existing processing for direct webhook config
+      const deliveryId = createId();
+      const payloadString = JSON.stringify(payload);
+
       // Save delivery record - optimized bulk insert
       await db.insert(webhookDelivery).values({
         id: deliveryId,
@@ -97,6 +105,69 @@ export class WebhookWorker {
       this.fastify.log.error(`Error processing webhook job ${job.id}:`, error);
       throw error; // BullMQ will handle retry
     }
+  }
+
+  private async processWebhookLookup(job: Job<WebhookJobData>) {
+    const { webhookConfig, payload } = job.data;
+    const { organizationId, event, data } = payload;
+
+    // SAFEGUARD: Deduplication - check if we recently sent this exact webhook
+    const dedupKey = `webhook:dedup:${organizationId}:${event}:${data.messageId || 'unknown'}`;
+    const isDuplicate = await this.fastify.redis.get(dedupKey);
+
+    if (isDuplicate) {
+      this.fastify.log.info(
+        `Skipping duplicate webhook for ${event} (messageId: ${data.messageId})`
+      );
+      return { success: true, message: 'Duplicate webhook skipped' };
+    }
+
+    // Get all active webhooks for the organization that listen to this event
+    const webhooks = await db
+      .select()
+      .from(webhook)
+      .where(and(eq(webhook.organizationId, organizationId), eq(webhook.active, true)));
+
+    // Queue all webhooks for async processing (fire-and-forget)
+    for (const webhookConfig of webhooks) {
+      try {
+        // Check if this webhook is configured for this event
+        if (webhookConfig.events && !webhookConfig.events.includes(event)) {
+          this.fastify.log.debug(
+            `Webhook ${webhookConfig.id} not configured for event ${event}`
+          );
+          continue;
+        }
+
+        // SAFEGUARD: Circuit breaker - check if webhook is temporarily disabled
+        const circuitKey = `webhook:circuit:${webhookConfig.id}`;
+        const isCircuitOpen = await this.fastify.redis.get(circuitKey);
+
+        if (isCircuitOpen) {
+          this.fastify.log.warn(
+            `Webhook ${webhookConfig.id} is circuit-broken, skipping delivery`
+          );
+          continue;
+        }
+
+        // Queue the webhook for delivery
+        console.log(
+          `Queuing webhook ${webhookConfig.id} for event ${event} to ${webhookConfig.url}`
+        );
+        const jobId = await this.fastify.webhookQueue.queueWebhook(webhookConfig, payload);
+        console.log(`Webhook queued successfully with jobId: ${jobId}`);
+      } catch (error) {
+        this.fastify.log.error(
+          `Error queuing webhook ${webhookConfig.id} for event ${event}:`,
+          error
+        );
+      }
+    }
+
+    // Set deduplication key (expires after 60 seconds)
+    await this.fastify.redis.setex(dedupKey, 60, '1');
+
+    return { success: true, message: `Webhooks queued for event ${event}` };
   }
 
   private async attemptDelivery(deliveryId: string, webhookConfig: any, payloadString: string) {

@@ -72,6 +72,10 @@ const fastify = Fastify({
           bufferSize: logBufferSize * 2, // 512KB by default
           flushInterval: logFlushInterval / 2, // 1000ms by default
         },
+  bodyLimit: 1048576, // 1MB limit to prevent large payload attacks
+  connectionTimeout: 10000, // 10 second connection timeout
+  keepAliveTimeout: 5000, // 5 second keep-alive timeout
+  maxParamLength: 512, // Limit parameter length for security
 });
 
 console.log('[Logger Configuration]', {
