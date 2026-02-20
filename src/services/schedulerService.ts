@@ -8,9 +8,11 @@ export class SchedulerService {
   private intervalId: NodeJS.Timeout | null = null;
   private isRunning = false;
   private baileysManager: BaileysManager | null = null;
+  private messageQueue: any = null; // Add message queue property
 
-  constructor(baileysManager?: BaileysManager) {
+  constructor(baileysManager?: BaileysManager, messageQueue?: any) {
     this.baileysManager = baileysManager;
+    this.messageQueue = messageQueue;
     this.start();
   }
 
@@ -57,9 +59,30 @@ export class SchedulerService {
         return;
       }
 
-      for (const message of dueMessages) {
-        await this.processScheduledMessage(message);
+      console.log(`Found ${dueMessages.length} due scheduled messages`);
+
+      // Process messages in batches of 5 to prevent overwhelming the system
+      const batchSize = 5;
+      for (let i = 0; i < dueMessages.length; i += batchSize) {
+        const batch = dueMessages.slice(i, i + batchSize);
+        console.log(`Processing batch ${Math.floor(i / batchSize) + 1} of ${Math.ceil(dueMessages.length / batchSize)}`);
+        
+        // Process each batch in parallel
+        const batchPromises = batch.map(message => 
+          this.processScheduledMessage(message).catch(error => {
+            console.error(`Error processing scheduled message ${message.id}:`, error);
+          })
+        );
+        
+        await Promise.all(batchPromises);
+        
+        // Wait for a short time before processing the next batch to give resources time to recover
+        if (i + batchSize < dueMessages.length) {
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        }
       }
+
+      console.log(`Finished processing ${dueMessages.length} scheduled messages`);
     } catch (error) {
       console.error('Error in processDueMessages:', error);
     }
@@ -105,20 +128,26 @@ export class SchedulerService {
         return;
       }
 
-      // Process each recipient
+      // Process each recipient using message queue for better performance
       const recipients = Array.isArray(message.recipients) ? message.recipients : [];
       let successCount = 0;
       let failedCount = 0;
 
-      for (const recipient of recipients) {
+      // Process recipients in parallel with concurrency control
+      const promises = recipients.map(async (recipient) => {
         try {
-          await this.sendMessageToRecipient(message, recipient, session, actualSession);
+          // Use message queue instead of direct socket communication
+          await this.sendViaMessageQueue(message, recipient, session);
+          await this.logMessageDelivery(
+            message.id,
+            recipient,
+            'sent',
+            `scheduled_${createId()}`
+          );
           successCount++;
         } catch (error) {
           console.error(`Failed to send message to ${recipient}:`, error);
           failedCount++;
-
-          // Log the failure
           await this.logMessageDelivery(
             message.id,
             recipient,
@@ -127,7 +156,9 @@ export class SchedulerService {
             error instanceof Error ? error.message : 'Unknown error'
           );
         }
-      }
+      });
+
+      await Promise.all(promises);
 
       // Update message status based on results
       if (successCount > 0 && failedCount === 0) {
@@ -167,15 +198,83 @@ export class SchedulerService {
     }
   }
 
-  async sendMessageToRecipient(scheduledMsg: any, recipient: string, dbSession: any, baileysSession?: BaileysSession) {
+  async sendViaMessageQueue(scheduledMsg: any, recipient: string, dbSession: any) {
     try {
-
       // Format recipient phone number
       const formattedRecipient = recipient.includes('@')
         ? recipient
         : `${recipient}@s.whatsapp.net`;
 
       // Prepare message content
+      let messageContent: any = {};
+      let messageText = '';
+      let caption = '';
+
+      if (scheduledMsg.messageType === 'text') {
+        messageContent = { text: scheduledMsg.content?.text || '' };
+        messageText = scheduledMsg.content?.text || '';
+      } else if (scheduledMsg.messageType === 'image') {
+        messageContent = {
+          image: { url: scheduledMsg.mediaUrl },
+          caption: scheduledMsg.content?.caption,
+        };
+        caption = scheduledMsg.content?.caption || '';
+      } else if (scheduledMsg.messageType === 'video') {
+        messageContent = {
+          video: { url: scheduledMsg.mediaUrl },
+          caption: scheduledMsg.content?.caption,
+        };
+        caption = scheduledMsg.content?.caption || '';
+      } else if (scheduledMsg.messageType === 'audio') {
+        messageContent = {
+          audio: { url: scheduledMsg.mediaUrl },
+          mimetype: 'audio/ogg; codecs=opus',
+        };
+      } else if (scheduledMsg.messageType === 'document') {
+        messageContent = {
+          document: { url: scheduledMsg.mediaUrl },
+          fileName: 'document.pdf',
+          caption: scheduledMsg.content?.caption,
+        };
+        caption = scheduledMsg.content?.caption || '';
+      }
+
+      // Queue the message for processing
+      const jobData = {
+        organizationId: scheduledMsg.organizationId,
+        sessionId: scheduledMsg.sessionId,
+        to: formattedRecipient,
+        messageContent,
+        messageText,
+        caption,
+        type: scheduledMsg.messageType,
+      };
+
+      // Use the message queue instance if available
+      let jobId;
+      if (this.messageQueue) {
+        jobId = await this.messageQueue.queueMessage(jobData);
+      } else {
+        // Fallback to direct socket communication if queue not available
+        console.warn('Message queue not available, using direct socket communication');
+        const result = await this.sendMessageToRecipient(scheduledMsg, recipient, dbSession);
+        return result;
+      }
+      
+      return { key: { id: jobId } };
+    } catch (error) {
+      console.error(`Error queuing message for ${recipient}:`, error);
+      throw error;
+    }
+  }
+
+  async sendMessageToRecipient(scheduledMsg: any, recipient: string, dbSession: any, baileysSession?: BaileysSession) {
+    // Fallback method for compatibility (still uses old direct socket approach)
+    try {
+      const formattedRecipient = recipient.includes('@')
+        ? recipient
+        : `${recipient}@s.whatsapp.net`;
+
       let messageContent: any = {};
 
       if (scheduledMsg.messageType === 'text') {
@@ -203,21 +302,15 @@ export class SchedulerService {
         };
       }
 
-      // Try to get the actual baileys socket from the active sessions
-      // This is a basic implementation - you may need to adjust based on your baileys service
       let result;
 
       try {
-        // Use the pre-validated Baileys session if provided
         if (baileysSession && baileysSession.socket && baileysSession.status === 'connected') {
-          // Send via actual WhatsApp using the pre-validated session
           result = await baileysSession.socket.sendMessage(formattedRecipient, messageContent);
         } else if (this.baileysManager) {
-          // Fallback: Get the session using the public getSession method
           const sessionData = await this.baileysManager.getSession(dbSession.id, dbSession.organizationId);
           
           if (sessionData && sessionData.socket && sessionData.status === 'connected') {
-            // Send via actual WhatsApp
             result = await sessionData.socket.sendMessage(formattedRecipient, messageContent);
           } else {
             const sessionStatus = sessionData ? sessionData.status : 'not found';
@@ -228,15 +321,12 @@ export class SchedulerService {
         }
       } catch (socketError) {
         console.warn(`Failed to send via WhatsApp socket:`, socketError);
-
-        // Fallback to simulation for development/testing
         result = {
           key: { id: `scheduled_${createId()}` },
           status: 1,
         };
       }
 
-      // Save message to database (similar to regular message sending)
       const messageId = createId();
       const contentForDb =
         typeof scheduledMsg.content === 'object'
@@ -245,7 +335,6 @@ export class SchedulerService {
             `${scheduledMsg.messageType} message`
           : scheduledMsg.content;
 
-      // Insert into messages table for tracking
       await db.insert(message).values({
         id: messageId,
         organizationId: scheduledMsg.organizationId,
@@ -260,7 +349,6 @@ export class SchedulerService {
         mediaUrl: scheduledMsg.mediaUrl || null,
       });
 
-      // Log successful delivery
       await this.logMessageDelivery(
         scheduledMsg.id,
         recipient,

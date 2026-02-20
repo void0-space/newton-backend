@@ -21,22 +21,22 @@ export class MessageWorker {
       enableReadyCheck: true
     });
     
-    this.worker = new Worker<MessageJobData>(
-      'whatsapp-messages',
-      async (job: Job<MessageJobData>) => {
-        return await this.processMessage(job);
-      },
-      {
-        connection,
-        concurrency: 25, // Optimized concurrency to prevent resource saturation
-        settings: {
-          // Process jobs in priority order (higher priority first)
-          lockDuration: 60000, // 60 second lock duration for long-running jobs
-          maxStalledCount: 2, // Retry stalled jobs after 2 attempts
-          stallInterval: 30000, // Check for stalled jobs every 30 seconds
-        },
-      }
-    );
+     this.worker = new Worker<MessageJobData>(
+       'whatsapp-messages',
+       async (job: Job<MessageJobData>) => {
+         return await this.processMessage(job);
+       },
+       {
+         connection,
+         concurrency: 5, // Reduced concurrency to prevent resource saturation
+         settings: {
+           // Process jobs in priority order (higher priority first)
+           lockDuration: 60000, // 60 second lock duration for long-running jobs
+           maxStalledCount: 2, // Retry stalled jobs after 2 attempts
+           stallInterval: 30000, // Check for stalled jobs every 30 seconds
+         },
+       }
+     );
 
     // Event handlers
     this.worker.on('completed', job => {

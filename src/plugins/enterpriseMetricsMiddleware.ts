@@ -60,6 +60,10 @@ const enterpriseMetricsMiddleware: FastifyPluginCallback = (fastify, options, do
     const start = Date.now();
     setTimeout(() => {
       const delay = Date.now() - start;
+      // Limit stored event loop delays to prevent memory bloat
+      if (metrics.eventLoopDelays.length > 1000) {
+        metrics.eventLoopDelays.shift(); // Remove oldest entry
+      }
       metrics.eventLoopDelays.push(delay);
     }, 0);
   }, 1000); // Check every second
@@ -125,6 +129,10 @@ const enterpriseMetricsMiddleware: FastifyPluginCallback = (fastify, options, do
       metrics.messageCount++;
     },
     addResponseTime: (time: number) => {
+      // Limit stored response times to prevent memory bloat
+      if (metrics.responseTimes.length > 1000) {
+        metrics.responseTimes.shift(); // Remove oldest entry
+      }
       metrics.responseTimes.push(time);
     },
     setQueueSize: (size: number) => {

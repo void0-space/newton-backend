@@ -286,8 +286,9 @@ async function start() {
     await fastify.register(messageQueuePlugin); // Register message queue after baileys
     await fastify.register(webhookQueuePlugin); // Register webhook queue
 
-    // Initialize scheduler with baileys manager
+    // Initialize scheduler with baileys manager and message queue
     schedulerService.setBaileysManager(fastify.baileys);
+    (schedulerService as any).messageQueue = fastify.messageQueue;
 
     // Register authentication endpoint
     fastify.route({

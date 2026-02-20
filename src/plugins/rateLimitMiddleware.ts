@@ -7,12 +7,12 @@ interface TokenBucket {
 }
 
 const rateLimitMiddleware: FastifyPluginCallback = (fastify, options, done) => {
-  // Rate limiting configuration with burst support
+  // Rate limiting configuration with burst support (optimized for resource usage)
   const RATE_LIMIT = {
     windowMs: 60 * 1000, // 1 minute window
-    max: 100, // 100 requests per minute
-    burst: 50, // Allow 50 extra requests in a burst
-    tokensPerSecond: 100 / 60, // ~1.666 tokens per second
+    max: 50, // Reduced from 100 to 50 requests per minute
+    burst: 25, // Reduced from 50 to 25 extra requests in a burst
+    tokensPerSecond: 50 / 60, // ~0.833 tokens per second
     message: 'Too many requests from this IP, please try again later.',
   };
 
